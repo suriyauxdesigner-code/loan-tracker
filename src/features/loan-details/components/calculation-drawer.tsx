@@ -11,12 +11,15 @@ import type { SerializedEntry } from "../serialize";
 const STEP_LABELS: Record<string, string> = {
   openingBalance: "Opening Balance",
   rateApplied: "Interest Rate",
+  daysCounted: "Days Counted",
   interestAccrual: "Interest Accrued",
   capitalization: "Capitalized",
   emiSizing: "EMI",
   paymentApplication: "Payment Applied",
   closingBalance: "Closing Balance",
 };
+
+const NON_CURRENCY_STEPS = new Set(["rateApplied", "daysCounted"]);
 
 export function CalculationDrawer({
   entry,
@@ -31,6 +34,7 @@ export function CalculationDrawer({
     ? [
         entry.breakdown.openingBalance,
         entry.breakdown.rateApplied,
+        entry.breakdown.daysCounted,
         entry.breakdown.interestAccrual,
         entry.breakdown.capitalization,
         entry.breakdown.emiSizing,
@@ -55,7 +59,11 @@ export function CalculationDrawer({
                       {STEP_LABELS[step.key] ?? step.key}
                     </span>
                     <span className="font-mono text-sm">
-                      {currency} {step.value}
+                      {NON_CURRENCY_STEPS.has(step.key)
+                        ? step.key === "rateApplied"
+                          ? `${step.value}%`
+                          : step.value
+                        : `${currency} ${step.value}`}
                     </span>
                   </div>
                   <p className="text-muted-foreground text-xs">{step.formula}</p>

@@ -43,6 +43,19 @@ export function explainRateApplied(ratePercent: Decimal): CalculationStep {
   };
 }
 
+export function explainDaysCounted(
+  days: number,
+  convention: DayCountConvention,
+): CalculationStep {
+  const denom = dayCountDenominator(convention);
+  return {
+    key: "daysCounted",
+    formula: `${days} days`,
+    explanation: `Calendar days in this period, out of a ${denom}-day year (${convention === "DAYS_360" ? "360" : "365"}-day count convention).`,
+    value: new Decimal(days),
+  };
+}
+
 const METHOD_LABEL: Record<InterestCalculationMethod, string> = {
   REDUCING_BALANCE: "reducing balance",
   SIMPLE: "flat/simple",

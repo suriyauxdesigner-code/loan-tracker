@@ -21,6 +21,7 @@ export interface SerializedStep {
 export interface SerializedBreakdown {
   openingBalance: SerializedStep;
   rateApplied: SerializedStep;
+  daysCounted: SerializedStep;
   interestAccrual: SerializedStep;
   capitalization?: SerializedStep;
   emiSizing: SerializedStep;
@@ -69,6 +70,7 @@ function serializeBreakdown(breakdown: CalculationBreakdown): SerializedBreakdow
   return {
     openingBalance: serializeStep(breakdown.openingBalance),
     rateApplied: serializeStep(breakdown.rateApplied),
+    daysCounted: serializeStep(breakdown.daysCounted),
     interestAccrual: serializeStep(breakdown.interestAccrual),
     capitalization: breakdown.capitalization
       ? serializeStep(breakdown.capitalization)

@@ -28,6 +28,7 @@ import { auditSchedule } from "./audit";
 import {
   explainCapitalization,
   explainClosingBalance,
+  explainDaysCounted,
   explainEmiSizing,
   explainInterestAccrual,
   explainOpeningBalance,
@@ -258,6 +259,10 @@ export function generateSchedule(
       const breakdown: CalculationBreakdown = {
         openingBalance: explainOpeningBalance(currentBalance, openingBalanceSource),
         rateApplied: explainRateApplied(input.interestRatePercent),
+        daysCounted: explainDaysCounted(
+          daysBetween(periodStart, periodEnd),
+          input.dayCountConvention,
+        ),
         interestAccrual: explainInterestAccrual(
           input.calculationMethod,
           currentBalance,
@@ -447,6 +452,10 @@ export function generateSchedule(
     const breakdown: CalculationBreakdown = {
       openingBalance: explainOpeningBalance(openingBalance, openingBalanceSource),
       rateApplied: explainRateApplied(input.interestRatePercent),
+      daysCounted: explainDaysCounted(
+        daysBetween(periodStart, periodEnd),
+        input.dayCountConvention,
+      ),
       interestAccrual: explainInterestAccrual(
         input.calculationMethod,
         openingBalance,

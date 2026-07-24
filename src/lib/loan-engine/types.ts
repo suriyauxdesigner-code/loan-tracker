@@ -91,6 +91,7 @@ export interface CalculationStep {
 export interface CalculationBreakdown {
   openingBalance: CalculationStep;
   rateApplied: CalculationStep;
+  daysCounted: CalculationStep;
   interestAccrual: CalculationStep;
   capitalization?: CalculationStep;
   emiSizing: CalculationStep;

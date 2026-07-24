@@ -32,6 +32,16 @@ describe("generateSchedule — standard reducing-balance loan", () => {
   });
 });
 
+describe("generateSchedule — calculation breakdown", () => {
+  it("exposes daysCounted as its own explained step per period", () => {
+    const result = generateSchedule(baseInput(), BEFORE_INCEPTION);
+    for (const entry of result.entries) {
+      expect(entry.breakdown.daysCounted.value.toNumber()).toBeGreaterThan(0);
+      expect(entry.breakdown.daysCounted.explanation).toMatch(/365-day year/);
+    }
+  });
+});
+
 describe("generateSchedule — zero interest rate", () => {
   it("uses straight-line principal/tenure EMI with zero interest", () => {
     const result = generateSchedule(
