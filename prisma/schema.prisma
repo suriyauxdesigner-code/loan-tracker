@@ -33,19 +33,24 @@ model Loan {
   bankName          String
   loanName          String
   loanAccountNumber String?
-  currency          String @default("INR")
+  currency          String   @default("INR")
+  loanType          LoanType
 
   // Core loan terms
-  principalAmount       Decimal      @db.Decimal(18, 2)
-  sanctionDate          DateTime
-  interestRate          Decimal      @db.Decimal(6, 3)
-  interestType          InterestType @default(FIXED)
-  loanTenureMonths      Int
-  repaymentTenureMonths Int
-  emiStartDate          DateTime?
-  targetClosureDate     DateTime?
+  principalAmount        Decimal                 @db.Decimal(18, 2)
+  sanctionDate           DateTime
+  loanApprovalDate       DateTime?
+  interestRate           Decimal                 @db.Decimal(6, 3)
+  interestType           InterestType            @default(FIXED)
+  interestResetFrequency InterestResetFrequency?
+  emiType                EmiType                 @default(STANDARD)
+  loanTenureMonths       Int
+  repaymentTenureMonths  Int
+  emiStartDate           DateTime?
+  targetClosureDate      DateTime?
 
-  // Moratorium / study period
+  // Moratorium / study period (Education) — reused for Home's "Construction
+  // Phase" (same underlying phenomenon, different wizard-step copy only).
   hasMoratorium                Boolean                   @default(false)
   studyStartDate               DateTime?
   studyEndDate                 DateTime?
@@ -56,12 +61,14 @@ model Loan {
   totalMoratoriumMonths        Int?
   moratoriumInterestPayment    MoratoriumInterestPayment @default(NONE)
   moratoriumAvgMonthlyInterest Decimal?                  @db.Decimal(18, 2)
+  capitalizeUnpaidInterest     Boolean                   @default(true)
 
-  status    LoanStatus @default(ACTIVE)
+  status    LoanStatus @default(NOT_STARTED)
   createdAt DateTime   @default(now())
   updatedAt DateTime   @updatedAt
 
   settings            LoanSettings?
+  importSnapshot      LoanImportSnapshot?
   disbursements       Disbursement[]
   payments            Payment[]
   amortizationEntries AmortizationEntry[]
@@ -70,14 +77,40 @@ model Loan {
   @@index([userId])
 }
 
+// Setup-time snapshot for a loan that's already partway through repayment.
+// Used ONCE to seed schedule generation — the live outstanding/accrued
+// state always comes from AmortizationEntry afterward, never from here.
+model LoanImportSnapshot {
+  id     String @id @default(cuid())
+  loanId String @unique
+  loan   Loan   @relation(fields: [loanId], references: [id], onDelete: Cascade)
+
+  asOfDate                DateTime
+  outstandingPrincipal    Decimal   @db.Decimal(18, 2)
+  accruedInterest         Decimal   @default(0) @db.Decimal(18, 2)
+  lastInterestPostingDate DateTime?
+  lastEmiPaidDate         DateTime?
+  totalInterestPaidSoFar  Decimal   @default(0) @db.Decimal(18, 2)
+  totalPrincipalPaidSoFar Decimal   @default(0) @db.Decimal(18, 2)
+
+  createdAt DateTime @default(now())
+}
+
 model LoanSettings {
   id     String @id @default(cuid())
   loanId String @unique
   loan   Loan   @relation(fields: [loanId], references: [id], onDelete: Cascade)
 
-  compounding        CompoundingFrequency       @default(MONTHLY)
-  calculationMethod  InterestCalculationMethod  @default(REDUCING_BALANCE)
-  dayCountConvention DayCountConvention         @default(DAYS_365)
+  compounding        CompoundingFrequency      @default(MONTHLY)
+  calculationMethod  InterestCalculationMethod @default(REDUCING_BALANCE)
+  dayCountConvention DayCountConvention        @default(DAYS_365)
+  paymentFrequency   PaymentFrequency          @default(MONTHLY)
+  prepaymentStrategy PrepaymentStrategy        @default(REDUCE_TENURE)
+
+  autoAccrueInterestDaily Boolean @default(true)
+  autoCapitalizeMonthly   Boolean @default(true)
+  autoGenerateEmiMonthly  Boolean @default(true)
+  autoRefreshDashboard    Boolean @default(true)
 
   emiReminder        Boolean @default(true)
   interestReminder   Boolean @default(true)
@@ -174,9 +207,45 @@ model DailyInterestLog {
   @@index([loanId, date])
 }
 
+enum LoanType {
+  EDUCATION
+  BIKE
+  CAR
+  HOME
+  PERSONAL
+  GOLD
+  BUSINESS
+  OTHER
+}
+
 enum InterestType {
   FIXED
   FLOATING
+}
+
+enum InterestResetFrequency {
+  MONTHLY
+  QUARTERLY
+  HALF_YEARLY
+  YEARLY
+}
+
+enum EmiType {
+  STANDARD
+  INTEREST_ONLY
+  FLEXIBLE
+}
+
+enum PaymentFrequency {
+  MONTHLY
+  QUARTERLY
+  WEEKLY
+  BIWEEKLY
+}
+
+enum PrepaymentStrategy {
+  REDUCE_TENURE
+  REDUCE_EMI
 }
 
 enum CompoundingFrequency {
@@ -221,7 +290,9 @@ enum AmortizationStatus {
 }
 
 enum LoanStatus {
-  ACTIVE
+  NOT_STARTED
+  STUDY_PERIOD
+  MORATORIUM
+  EMI_STARTED
   CLOSED
-  DRAFT
 }

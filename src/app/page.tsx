@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { signOut } from "@/features/auth/actions";
@@ -15,7 +16,9 @@ export default async function Home() {
   const user = authUser?.email
     ? await prisma.user.findUnique({
         where: { email: authUser.email },
-        include: { loans: true },
+        include: {
+          loans: { include: { _count: { select: { amortizationEntries: true } } } },
+        },
       })
     : null;
 
@@ -40,10 +43,16 @@ export default async function Home() {
         {user.loans.map((loan) => (
           <Card key={loan.id}>
             <CardHeader>
-              <CardTitle>{loan.loanName}</CardTitle>
+              <div className="flex items-center gap-2">
+                <CardTitle>{loan.loanName}</CardTitle>
+                <Badge variant="secondary">{loan.loanType}</Badge>
+                <Badge variant="outline">{loan.status.replaceAll("_", " ")}</Badge>
+              </div>
             </CardHeader>
             <CardContent className="text-muted-foreground text-sm">
               {loan.bankName} · {loan.currency} {loan.principalAmount.toString()}
+              {" · "}
+              {loan._count.amortizationEntries} scheduled entries
             </CardContent>
           </Card>
         ))}

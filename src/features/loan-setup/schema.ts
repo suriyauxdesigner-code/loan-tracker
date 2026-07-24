@@ -1,9 +1,10 @@
 import { z } from "zod";
 import {
-  CompoundingFrequency,
-  DayCountConvention,
-  InterestCalculationMethod,
+  EmiType,
+  InterestResetFrequency,
   InterestType,
+  LoanStatus,
+  LoanType,
   MoratoriumInterestPayment,
   PaymentType,
 } from "@/generated/prisma/enums";
@@ -55,23 +56,60 @@ export const existingPaymentSchema = z.object({
 });
 
 export const loanSetupSchema = z.object({
-  // Basics
+  // Loan Details
+  loanType: z.enum([
+    LoanType.EDUCATION,
+    LoanType.BIKE,
+    LoanType.CAR,
+    LoanType.HOME,
+    LoanType.PERSONAL,
+    LoanType.GOLD,
+    LoanType.BUSINESS,
+    LoanType.OTHER,
+  ]),
   bankName: z.string().min(1, "Required"),
   loanName: z.string().min(1, "Required"),
   loanAccountNumber: z.string().optional(),
   currency: z.string().min(1),
 
-  // Terms
   principalAmount: decimalString(0.01),
   sanctionDate: z.string().min(1, "Required"),
+  loanApprovalDate: optionalDateString,
   interestRate: decimalString(0),
   interestType: z.enum([InterestType.FIXED, InterestType.FLOATING]),
+  interestResetFrequency: z
+    .enum([
+      InterestResetFrequency.MONTHLY,
+      InterestResetFrequency.QUARTERLY,
+      InterestResetFrequency.HALF_YEARLY,
+      InterestResetFrequency.YEARLY,
+    ])
+    .optional(),
+  emiType: z.enum([EmiType.STANDARD, EmiType.INTEREST_ONLY, EmiType.FLEXIBLE]),
   loanTenureMonths: intString,
   repaymentTenureMonths: intString,
   emiStartDate: optionalDateString,
   targetClosureDate: optionalDateString,
+  status: z.enum([
+    LoanStatus.NOT_STARTED,
+    LoanStatus.STUDY_PERIOD,
+    LoanStatus.MORATORIUM,
+    LoanStatus.EMI_STARTED,
+    LoanStatus.CLOSED,
+  ]),
 
-  // Moratorium
+  // Existing-loan toggle (inline in Step 1) + snapshot, used once to seed
+  // schedule generation for a loan that's already partway through repayment.
+  isExistingLoan: z.boolean(),
+  outstandingPrincipal: optionalDecimalString,
+  accruedInterest: optionalDecimalString,
+  lastInterestPostingDate: optionalDateString,
+  lastEmiPaidDate: optionalDateString,
+  totalInterestPaidSoFar: optionalDecimalString,
+  totalPrincipalPaidSoFar: optionalDecimalString,
+
+  // Study Period & Moratorium (Education) / Construction Phase (Home) —
+  // same fields reused for both, only the step's copy differs.
   hasMoratorium: z.boolean(),
   studyStartDate: optionalDateString,
   studyEndDate: optionalDateString,
@@ -86,38 +124,17 @@ export const loanSetupSchema = z.object({
     MoratoriumInterestPayment.PARTIAL,
   ]),
   moratoriumAvgMonthlyInterest: optionalDecimalString,
+  capitalizeUnpaidInterest: z.boolean(),
 
-  // Disbursements & existing payments
+  // Disbursements & previous payments
   disbursements: z.array(disbursementSchema),
   existingPayments: z.array(existingPaymentSchema),
-
-  // Settings
-  compounding: z.enum([
-    CompoundingFrequency.DAILY,
-    CompoundingFrequency.MONTHLY,
-    CompoundingFrequency.QUARTERLY,
-    CompoundingFrequency.YEARLY,
-  ]),
-  calculationMethod: z.enum([
-    InterestCalculationMethod.SIMPLE,
-    InterestCalculationMethod.COMPOUND,
-    InterestCalculationMethod.REDUCING_BALANCE,
-  ]),
-  dayCountConvention: z.enum([
-    DayCountConvention.DAYS_365,
-    DayCountConvention.DAYS_360,
-  ]),
-
-  // Notifications
-  emiReminder: z.boolean(),
-  interestReminder: z.boolean(),
-  monthlySummary: z.boolean(),
-  emailNotifications: z.boolean(),
 });
 
 export type LoanSetupValues = z.infer<typeof loanSetupSchema>;
 
 export const loanSetupDefaults: LoanSetupValues = {
+  loanType: LoanType.EDUCATION,
   bankName: "",
   loanName: "",
   loanAccountNumber: "",
@@ -125,12 +142,24 @@ export const loanSetupDefaults: LoanSetupValues = {
 
   principalAmount: "",
   sanctionDate: "",
+  loanApprovalDate: "",
   interestRate: "",
   interestType: InterestType.FIXED,
+  interestResetFrequency: undefined,
+  emiType: EmiType.STANDARD,
   loanTenureMonths: "60",
   repaymentTenureMonths: "60",
   emiStartDate: "",
   targetClosureDate: "",
+  status: LoanStatus.NOT_STARTED,
+
+  isExistingLoan: false,
+  outstandingPrincipal: "",
+  accruedInterest: "",
+  lastInterestPostingDate: "",
+  lastEmiPaidDate: "",
+  totalInterestPaidSoFar: "",
+  totalPrincipalPaidSoFar: "",
 
   hasMoratorium: false,
   studyStartDate: "",
@@ -142,36 +171,51 @@ export const loanSetupDefaults: LoanSetupValues = {
   totalMoratoriumMonths: "",
   moratoriumInterestPayment: MoratoriumInterestPayment.NONE,
   moratoriumAvgMonthlyInterest: "",
+  capitalizeUnpaidInterest: true,
 
   disbursements: [{ date: "", amount: "", remarks: "" }],
   existingPayments: [],
-
-  compounding: CompoundingFrequency.MONTHLY,
-  calculationMethod: InterestCalculationMethod.REDUCING_BALANCE,
-  dayCountConvention: DayCountConvention.DAYS_365,
-
-  emiReminder: true,
-  interestReminder: true,
-  monthlySummary: true,
-  emailNotifications: false,
 };
 
-export const STEP_FIELDS = [
-  [
+export type WizardStepKey =
+  | "details"
+  | "previous-payments"
+  | "moratorium"
+  | "disbursement"
+  | "review";
+
+const STEP_FIELD_MAP: Record<
+  Exclude<WizardStepKey, "review">,
+  readonly (keyof LoanSetupValues)[]
+> = {
+  details: [
+    "loanType",
     "bankName",
     "loanName",
     "loanAccountNumber",
     "currency",
     "principalAmount",
     "sanctionDate",
+    "loanApprovalDate",
     "interestRate",
     "interestType",
+    "interestResetFrequency",
+    "emiType",
     "loanTenureMonths",
     "repaymentTenureMonths",
     "emiStartDate",
     "targetClosureDate",
+    "status",
+    "isExistingLoan",
+    "outstandingPrincipal",
+    "accruedInterest",
+    "lastInterestPostingDate",
+    "lastEmiPaidDate",
+    "totalInterestPaidSoFar",
+    "totalPrincipalPaidSoFar",
   ],
-  [
+  "previous-payments": ["existingPayments"],
+  moratorium: [
     "hasMoratorium",
     "studyStartDate",
     "studyEndDate",
@@ -182,15 +226,12 @@ export const STEP_FIELDS = [
     "totalMoratoriumMonths",
     "moratoriumInterestPayment",
     "moratoriumAvgMonthlyInterest",
+    "capitalizeUnpaidInterest",
   ],
-  ["disbursements", "existingPayments"],
-  [
-    "compounding",
-    "calculationMethod",
-    "dayCountConvention",
-    "emiReminder",
-    "interestReminder",
-    "monthlySummary",
-    "emailNotifications",
-  ],
-] as const satisfies readonly (keyof LoanSetupValues)[][];
+  disbursement: ["disbursements"],
+};
+
+export function getStepFields(step: WizardStepKey): (keyof LoanSetupValues)[] {
+  if (step === "review") return [];
+  return [...STEP_FIELD_MAP[step]];
+}
