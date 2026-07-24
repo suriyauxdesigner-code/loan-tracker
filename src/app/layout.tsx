@@ -9,8 +9,8 @@ const figtree = Figtree({
 });
 
 export const metadata: Metadata = {
-  title: "Loan Tracker",
-  description: "Personal education loan management",
+  title: "FinanceOS",
+  description: "A personal finance operating system — Loans, and more to come",
 };
 
 export default function RootLayout({
