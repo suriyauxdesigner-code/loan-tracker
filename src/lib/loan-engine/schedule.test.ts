@@ -3,11 +3,15 @@ import { Decimal } from "decimal.js";
 import { generateSchedule } from "./schedule";
 import { baseInput } from "./test-helpers";
 
-const FAR_FUTURE = new Date("2099-01-01"); // treat every generated period as "in the past" for status purposes
+// "today" fixed before any test loan's sanctionDate, so every generated
+// period is a future projection (assumed paid on schedule) rather than a
+// genuinely missed past period — these tests are about the projection
+// math, not missed-payment handling (see the dedicated tests for that).
+const BEFORE_INCEPTION = new Date("2020-01-01");
 
 describe("generateSchedule — standard reducing-balance loan", () => {
   it("terminates at exactly zero via the final-period plug value", () => {
-    const result = generateSchedule(baseInput(), FAR_FUTURE);
+    const result = generateSchedule(baseInput(), BEFORE_INCEPTION);
     expect(result.converged).toBe(true);
     // Day-count-based accrual (varies by days-in-month) naturally drifts
     // a little from the nominal-rate EMI sizing, so convergence can land
@@ -20,7 +24,7 @@ describe("generateSchedule — standard reducing-balance loan", () => {
   });
 
   it("uses a flat EMI that matches the annuity reference for every period", () => {
-    const result = generateSchedule(baseInput(), FAR_FUTURE);
+    const result = generateSchedule(baseInput(), BEFORE_INCEPTION);
     const emis = result.entries.slice(0, -1).map((e) => e.emiAmount.toNumber());
     for (const emi of emis) {
       expect(emi).toBeCloseTo(10661.86, 0);
@@ -32,7 +36,7 @@ describe("generateSchedule — zero interest rate", () => {
   it("uses straight-line principal/tenure EMI with zero interest", () => {
     const result = generateSchedule(
       baseInput({ interestRatePercent: new Decimal(0) }),
-      FAR_FUTURE,
+      BEFORE_INCEPTION,
     );
     expect(result.converged).toBe(true);
     for (const entry of result.entries) {
@@ -55,7 +59,7 @@ describe("generateSchedule — extra payment / prepayment strategy", () => {
           },
         ],
       }),
-      FAR_FUTURE,
+      BEFORE_INCEPTION,
     );
     expect(result.converged).toBe(true);
     expect(result.entries.length).toBeLessThan(12);
@@ -73,7 +77,7 @@ describe("generateSchedule — extra payment / prepayment strategy", () => {
           },
         ],
       }),
-      FAR_FUTURE,
+      BEFORE_INCEPTION,
     );
     expect(result.converged).toBe(true);
     // Same nominal tenure as the no-prepayment case (+/- day-count drift),
@@ -89,7 +93,7 @@ describe("generateSchedule — INTEREST_ONLY emiType", () => {
   it("charges interest-only installments then balloons the principal at the end", () => {
     const result = generateSchedule(
       baseInput({ emiType: "INTEREST_ONLY" }),
-      FAR_FUTURE,
+      BEFORE_INCEPTION,
     );
     expect(result.converged).toBe(true);
     const allButLast = result.entries.slice(0, -1);
@@ -112,7 +116,7 @@ describe("generateSchedule — moratorium phase", () => {
         moratoriumInterestPayment: "FULL",
         emiStartDate: new Date("2024-07-01"),
       }),
-      FAR_FUTURE,
+      BEFORE_INCEPTION,
     );
     expect(result.converged).toBe(true);
     const moratoriumEntries = result.entries.filter(
@@ -141,7 +145,7 @@ describe("generateSchedule — existing-loan import", () => {
           accruedInterest: new Decimal(0),
         },
       }),
-      FAR_FUTURE,
+      BEFORE_INCEPTION,
     );
     expect(result.entries.length).toBeGreaterThan(0);
     const first = result.entries[0];
@@ -164,7 +168,7 @@ describe("generateSchedule — degenerate input", () => {
         // tenure — still converges because of the plug value, so instead
         // force true non-convergence with a validation error input.
       }),
-      FAR_FUTURE,
+      BEFORE_INCEPTION,
     );
     // Even a harsh rate still converges via the plug value; this asserts
     // the engine doesn't throw or hang, and returns a bounded entry count.
@@ -174,10 +178,104 @@ describe("generateSchedule — degenerate input", () => {
   it("returns converged=false and no entries when validation fails", () => {
     const result = generateSchedule(
       baseInput({ disbursements: [], loanTenureMonths: 0 }),
-      FAR_FUTURE,
+      BEFORE_INCEPTION,
     );
     expect(result.converged).toBe(false);
     expect(result.entries).toHaveLength(0);
     expect(result.warnings.some((w) => w.severity === "error")).toBe(true);
+  });
+});
+
+describe("generateSchedule — calculation method", () => {
+  it("COMPOUND accrues more interest per period than REDUCING_BALANCE for the same inputs", () => {
+    const reducing = generateSchedule(
+      baseInput({ calculationMethod: "REDUCING_BALANCE" }),
+      BEFORE_INCEPTION,
+    );
+    const compound = generateSchedule(
+      baseInput({ calculationMethod: "COMPOUND", compounding: "DAILY" }),
+      BEFORE_INCEPTION,
+    );
+    expect(
+      compound.entries[0].interestAccrued.greaterThan(
+        reducing.entries[0].interestAccrued,
+      ),
+    ).toBe(true);
+  });
+
+  it("SIMPLE produces a flat/add-on EMI, not annuity, even with the default STANDARD emiType", () => {
+    const result = generateSchedule(
+      baseInput({ calculationMethod: "SIMPLE" }),
+      BEFORE_INCEPTION,
+    );
+    // (120000 + 120000*0.01*12)/12 = 11200, distinctly not the ~10661.86 annuity figure
+    expect(result.entries[0].emiAmount.toNumber()).toBeCloseTo(11200, 0);
+  });
+});
+
+describe("generateSchedule — frequency-aware capitalization", () => {
+  it("QUARTERLY compounding only folds the shortfall into the balance every 3rd period", () => {
+    const result = generateSchedule(
+      baseInput({
+        hasMoratorium: true,
+        moratoriumStartDate: new Date("2024-01-01"),
+        moratoriumEndDate: new Date("2024-07-01"),
+        moratoriumInterestPayment: "NONE",
+        capitalizeUnpaidInterest: true,
+        compounding: "QUARTERLY",
+        emiStartDate: new Date("2024-07-01"),
+      }),
+      BEFORE_INCEPTION,
+    );
+    const moratoriumEntries = result.entries.filter(
+      (e) => e.dueDate <= new Date("2024-07-01"),
+    );
+    expect(moratoriumEntries).toHaveLength(6);
+    expect(moratoriumEntries[0].capitalizedInterest.toNumber()).toBe(0);
+    expect(moratoriumEntries[1].capitalizedInterest.toNumber()).toBe(0);
+    expect(moratoriumEntries[2].capitalizedInterest.toNumber()).toBeGreaterThan(0);
+  });
+});
+
+describe("generateSchedule — missed payments", () => {
+  it("a genuinely missed past period does not reduce principal and carries interest forward", () => {
+    const wellIntoTheLoan = new Date("2024-08-01");
+    const result = generateSchedule(baseInput(), wellIntoTheLoan);
+    const missed = result.entries.find((e) => e.status === "MISSED");
+    expect(missed).toBeDefined();
+    expect(missed!.principalPaid.toNumber()).toBe(0);
+    expect(
+      missed!.closingBalance.greaterThan(missed!.openingBalance),
+    ).toBe(true);
+  });
+});
+
+describe("generateSchedule — closure reason", () => {
+  it("NATURAL_MATURITY when the loan runs its full nominal tenure", () => {
+    const result = generateSchedule(baseInput(), BEFORE_INCEPTION);
+    expect(result.closureReason).toBe("NATURAL_MATURITY");
+  });
+
+  it("FORECLOSURE when a lump-sum payment closes the loan early", () => {
+    const result = generateSchedule(
+      baseInput({
+        payments: [
+          {
+            date: new Date("2024-07-01"),
+            amount: new Decimal(100000),
+            type: "LUMP_SUM",
+          },
+        ],
+      }),
+      BEFORE_INCEPTION,
+    );
+    expect(result.closureReason).toBe("FORECLOSURE");
+  });
+});
+
+describe("generateSchedule — anomalies", () => {
+  it("produces no anomalies for a clean, converging loan", () => {
+    const result = generateSchedule(baseInput(), BEFORE_INCEPTION);
+    expect(result.anomalies).toHaveLength(0);
   });
 });

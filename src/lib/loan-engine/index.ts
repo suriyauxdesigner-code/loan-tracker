@@ -6,4 +6,6 @@ export * from "./moratorium";
 export * from "./disbursement";
 export * from "./import-seed";
 export * from "./validate";
+export * from "./explain";
+export * from "./audit";
 export * from "./schedule";

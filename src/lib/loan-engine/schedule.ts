@@ -1,13 +1,15 @@
 import { Decimal } from "decimal.js";
 import type {
   AmortizationStatus,
+  CalculationBreakdown,
+  ClosureReason,
   GenerateScheduleResult,
   LoanEngineInput,
   PaymentInput,
   ScheduleEntry,
 } from "./types";
 import { addMonthsAnchored, daysBetween, monthsBetween } from "./date-utils";
-import { accruePeriodInterest, installmentRate } from "./interest";
+import { accrueForMethod, installmentRate } from "./interest";
 import {
   computeAnnuityEmi,
   computeFinalPeriodPayment,
@@ -16,11 +18,22 @@ import {
 } from "./emi";
 import {
   computeMoratoriumPeriod,
+  isCapitalizationBoundary,
   lumpSumCapitalizeAtMoratoriumEnd,
 } from "./moratorium";
 import { buildDisbursementTimeline, disbursementDatesWithin } from "./disbursement";
 import { buildSeedState } from "./import-seed";
 import { validateLoanInputs } from "./validate";
+import { auditSchedule } from "./audit";
+import {
+  explainCapitalization,
+  explainClosingBalance,
+  explainEmiSizing,
+  explainInterestAccrual,
+  explainOpeningBalance,
+  explainPaymentApplication,
+  explainRateApplied,
+} from "./explain";
 
 const SAFETY_MARGIN_MONTHS = 24;
 const ZERO_THRESHOLD = new Decimal("0.01");
@@ -44,6 +57,11 @@ function paymentsInWindow(
   periodEnd: Date,
 ): PaymentInput[] {
   return payments.filter((p) => p.date > periodStart && p.date <= periodEnd);
+}
+
+function latestPaymentDate(payments: PaymentInput[]): Date | null {
+  if (payments.length === 0) return null;
+  return payments.reduce((latest, p) => (p.date > latest ? p.date : latest), payments[0].date);
 }
 
 function computeStatus(
@@ -97,13 +115,30 @@ function applyPayments(
   return { interestPaid, principalPaid, extraPayment };
 }
 
+function sizeEmi(
+  input: LoanEngineInput,
+  balance: Decimal,
+  periodicRate: Decimal,
+  remainingPeriods: number,
+): Decimal {
+  return input.calculationMethod === "SIMPLE"
+    ? computeFlatEmi(balance, periodicRate, remainingPeriods)
+    : computeAnnuityEmi(balance, periodicRate, remainingPeriods);
+}
+
 export function generateSchedule(
   input: LoanEngineInput,
   today: Date = new Date(),
 ): GenerateScheduleResult {
   const warnings = validateLoanInputs(input);
   if (warnings.some((w) => w.severity === "error")) {
-    return { entries: [], warnings, converged: false };
+    return {
+      entries: [],
+      warnings,
+      anomalies: [],
+      converged: false,
+      closureReason: null,
+    };
   }
 
   const entries: ScheduleEntry[] = [];
@@ -122,6 +157,8 @@ export function generateSchedule(
   let openingBalance: Decimal;
   let startPhase: "MORATORIUM" | "EMI";
   let firstPeriodEndOverride: Date | null = null;
+  let openingBalanceSource: "disbursement" | "prior-closing" | "import-snapshot" =
+    "disbursement";
 
   if (input.importSnapshot) {
     const seed = buildSeedState(
@@ -135,6 +172,7 @@ export function generateSchedule(
     );
     startPhase = seed.resumeFromPhase;
     firstPeriodEndOverride = seed.nextAlignedDueDate;
+    openingBalanceSource = "import-snapshot";
   } else {
     cursorDate =
       input.disbursements.length > 0
@@ -154,6 +192,7 @@ export function generateSchedule(
 
   // ---- MORATORIUM PHASE ----
   let carriedShortfall = new Decimal(0);
+  let moratoriumPeriodIndex = 0;
   if (startPhase === "MORATORIUM" && moratoriumEnd) {
     let periodStart = cursorDate;
     while (periodStart < moratoriumEnd && entryIndex < safetyCap) {
@@ -176,21 +215,28 @@ export function generateSchedule(
 
       // Date-weighted: splits at any mid-period disbursement instead of
       // assuming a flat balance for the whole period.
-      const interestAccrued = accruePeriodInterest(
+      const interestAccrued = accrueForMethod(
+        input.calculationMethod,
         periodStart,
         periodEnd,
         input.interestRatePercent,
         input.dayCountConvention,
+        input.compounding,
         (asOf) => (input.importSnapshot ? currentBalance : disbursementTimeline(asOf)),
         changePoints,
       );
+
+      moratoriumPeriodIndex++;
+      const capitalizeThisBoundary =
+        input.capitalizeUnpaidInterest &&
+        isCapitalizationBoundary(input.compounding, moratoriumPeriodIndex);
 
       const result = computeMoratoriumPeriod({
         openingBalance: currentBalance,
         interestAccrued,
         paymentPolicy: input.moratoriumInterestPayment,
         avgMonthlyPayment: input.moratoriumAvgMonthlyInterest,
-        capitalizeEachPeriod: input.capitalizeUnpaidInterest,
+        capitalizeEachPeriod: capitalizeThisBoundary,
         carriedShortfall,
       });
       carriedShortfall = result.carriedShortfall;
@@ -209,9 +255,44 @@ export function generateSchedule(
           : interestAccrued;
 
       entryIndex++;
+      const breakdown: CalculationBreakdown = {
+        openingBalance: explainOpeningBalance(currentBalance, openingBalanceSource),
+        rateApplied: explainRateApplied(input.interestRatePercent),
+        interestAccrual: explainInterestAccrual(
+          input.calculationMethod,
+          currentBalance,
+          input.interestRatePercent,
+          daysBetween(periodStart, periodEnd),
+          input.dayCountConvention,
+          interestAccrued,
+        ),
+        capitalization: result.capitalizedThisPeriod.greaterThan(0)
+          ? explainCapitalization(result.capitalizedThisPeriod, result.closingBalance)
+          : undefined,
+        emiSizing: {
+          key: "emiSizing",
+          formula: amountDue.isZero() ? "No payment due this period" : amountDue.toFixed(2),
+          explanation:
+            input.moratoriumInterestPayment === "NONE"
+              ? "No interest payment is expected during the moratorium under the selected policy."
+              : input.moratoriumInterestPayment === "FULL"
+                ? "Full monthly interest is expected to be paid during the moratorium."
+                : "A fixed partial interest amount is expected to be paid during the moratorium.",
+          value: amountDue,
+        },
+        paymentApplication: explainPaymentApplication(interestPaid, new Decimal(0), interestAccrued),
+        closingBalance: explainClosingBalance(
+          currentBalance,
+          new Decimal(0),
+          result.capitalizedThisPeriod,
+          result.closingBalance,
+        ),
+      };
+
       entries.push({
         monthIndex: entryIndex,
         dueDate: periodEnd,
+        phase: "MORATORIUM",
         openingBalance: currentBalance,
         interestAccrued,
         interestPaid,
@@ -221,13 +302,20 @@ export function generateSchedule(
         capitalizedInterest: result.capitalizedThisPeriod,
         closingBalance: result.closingBalance,
         status: computeStatus(periodEnd, today, amountDue, interestPaid),
+        paymentDate: latestPaymentDate(periodPayments),
+        daysLate: periodPayments.length > 0 ? daysBetween(periodEnd, latestPaymentDate(periodPayments)!) : null,
+        breakdown,
       });
 
       openingBalance = result.closingBalance;
+      openingBalanceSource = "prior-closing";
       periodStart = periodEnd;
     }
 
-    if (!input.capitalizeUnpaidInterest && carriedShortfall.greaterThan(0)) {
+    if (carriedShortfall.greaterThan(0)) {
+      // Leftover shortfall that hasn't hit a capitalization boundary yet
+      // (or, when capitalizeUnpaidInterest is false, the entire
+      // moratorium's shortfall) gets folded in once, uncompounded, here.
       openingBalance = lumpSumCapitalizeAtMoratoriumEnd(
         carriedShortfall,
         openingBalance,
@@ -253,18 +341,8 @@ export function generateSchedule(
   );
 
   let fixedEmi: Decimal | null = null;
-  if (input.emiType === "STANDARD") {
-    fixedEmi = computeAnnuityEmi(
-      openingBalance,
-      periodicRate,
-      input.repaymentTenureMonths,
-    );
-  } else if (input.calculationMethod === "SIMPLE") {
-    fixedEmi = computeFlatEmi(
-      openingBalance,
-      periodicRate,
-      input.repaymentTenureMonths,
-    );
+  if (input.emiType !== "INTEREST_ONLY") {
+    fixedEmi = sizeEmi(input, openingBalance, periodicRate, input.repaymentTenureMonths);
   }
 
   let periodStart = cursorDate;
@@ -288,11 +366,13 @@ export function generateSchedule(
       ? []
       : disbursementDatesWithin(input.disbursements, periodStart, periodEnd);
     const balanceAtStart = openingBalance;
-    const interestAccrued = accruePeriodInterest(
+    const interestAccrued = accrueForMethod(
+      input.calculationMethod,
       periodStart,
       periodEnd,
       input.interestRatePercent,
       input.dayCountConvention,
+      input.compounding,
       (asOf) =>
         input.importSnapshot
           ? balanceAtStart
@@ -306,11 +386,14 @@ export function generateSchedule(
     if (input.emiType === "INTEREST_ONLY") {
       plannedEmi = computeInterestOnlyEmi(interestAccrued);
     } else {
-      plannedEmi = fixedEmi ?? computeAnnuityEmi(
-        openingBalance,
-        periodicRate,
-        input.repaymentTenureMonths - periodsElapsedInEmiPhase,
-      );
+      plannedEmi =
+        fixedEmi ??
+        sizeEmi(
+          input,
+          openingBalance,
+          periodicRate,
+          input.repaymentTenureMonths - periodsElapsedInEmiPhase,
+        );
     }
 
     const plannedPrincipal = Decimal.max(0, plannedEmi.minus(interestAccrued));
@@ -329,6 +412,8 @@ export function generateSchedule(
     let principalPaid: Decimal;
     let extraPayment = new Decimal(0);
     let hasActualPayment = false;
+    let closingBalance: Decimal;
+    let capitalizedThisPeriod = new Decimal(0);
 
     if (periodPayments.length > 0) {
       const applied = applyPayments(periodPayments, interestAccrued);
@@ -336,44 +421,84 @@ export function generateSchedule(
       principalPaid = applied.principalPaid;
       extraPayment = applied.extraPayment;
       hasActualPayment = true;
-    } else {
-      // No recorded payment for this period yet — an amortization table
-      // assumes the planned installment gets paid on time; Payment
-      // Tracker (a later phase) is what reconciles real payments and can
-      // override this going forward.
+      closingBalance = Decimal.max(0, openingBalance.minus(principalPaid));
+    } else if (periodEnd > today) {
+      // Genuine future projection — an amortization table assumes the
+      // planned installment gets paid on time; Payment Tracker (a later
+      // phase) reconciles real payments as they happen.
       interestPaid = interestAccrued;
       principalPaid = Decimal.max(0, plannedEmi.minus(interestAccrued));
+      closingBalance = Decimal.max(0, openingBalance.minus(principalPaid));
+    } else {
+      // Past due date, nothing recorded — genuinely missed. Real banks
+      // don't treat this as paid: principal isn't reduced, and the unpaid
+      // interest is rolled into what's owed (capitalized) rather than
+      // silently vanishing.
+      interestPaid = new Decimal(0);
+      principalPaid = new Decimal(0);
+      closingBalance = openingBalance.plus(interestAccrued);
+      capitalizedThisPeriod = interestAccrued;
     }
 
     const totalPaid = interestPaid.plus(principalPaid);
-    const closingBalance = Decimal.max(0, openingBalance.minus(principalPaid));
 
     entryIndex++;
     periodsElapsedInEmiPhase++;
+    const breakdown: CalculationBreakdown = {
+      openingBalance: explainOpeningBalance(openingBalance, openingBalanceSource),
+      rateApplied: explainRateApplied(input.interestRatePercent),
+      interestAccrual: explainInterestAccrual(
+        input.calculationMethod,
+        openingBalance,
+        input.interestRatePercent,
+        daysBetween(periodStart, periodEnd),
+        input.dayCountConvention,
+        interestAccrued,
+      ),
+      capitalization: capitalizedThisPeriod.greaterThan(0)
+        ? explainCapitalization(capitalizedThisPeriod, closingBalance)
+        : undefined,
+      emiSizing: explainEmiSizing(input.emiType, input.calculationMethod, isFinalPeriod, plannedEmi),
+      paymentApplication: explainPaymentApplication(interestPaid, principalPaid, interestAccrued),
+      closingBalance: explainClosingBalance(
+        openingBalance,
+        principalPaid,
+        capitalizedThisPeriod,
+        closingBalance,
+      ),
+    };
+
     entries.push({
       monthIndex: entryIndex,
       dueDate: periodEnd,
+      phase: "EMI",
       openingBalance,
       interestAccrued,
       interestPaid,
       principalPaid,
       emiAmount: plannedEmi,
       extraPayment,
-      capitalizedInterest: new Decimal(0),
+      capitalizedInterest: capitalizedThisPeriod,
       closingBalance,
       status: hasActualPayment
         ? computeStatus(periodEnd, today, plannedEmi, totalPaid)
         : periodEnd > today
           ? "UPCOMING"
-          : "PAID",
+          : "MISSED",
+      paymentDate: hasActualPayment ? latestPaymentDate(periodPayments) : null,
+      daysLate: hasActualPayment
+        ? daysBetween(periodEnd, latestPaymentDate(periodPayments)!)
+        : null,
+      breakdown,
     });
 
     if (
       extraPayment.greaterThan(0) &&
-      input.emiType === "STANDARD" &&
+      input.emiType !== "INTEREST_ONLY" &&
       input.prepaymentStrategy === "REDUCE_EMI"
     ) {
-      fixedEmi = computeAnnuityEmi(
+      fixedEmi = sizeEmi(
+        input,
         closingBalance,
         periodicRate,
         Math.max(1, input.repaymentTenureMonths - periodsElapsedInEmiPhase),
@@ -381,9 +506,22 @@ export function generateSchedule(
     }
 
     openingBalance = closingBalance;
+    openingBalanceSource = "prior-closing";
     periodStart = periodEnd;
   }
 
   const converged = openingBalance.lessThanOrEqualTo(ZERO_THRESHOLD);
-  return { entries, warnings, converged };
+
+  let closureReason: ClosureReason | null = null;
+  if (converged) {
+    const hadExtraPayment = entries.some((e) => e.extraPayment.greaterThan(0));
+    closureReason =
+      hadExtraPayment && periodsElapsedInEmiPhase < input.repaymentTenureMonths
+        ? "FORECLOSURE"
+        : "NATURAL_MATURITY";
+  }
+
+  const anomalies = auditSchedule(entries, input, converged);
+
+  return { entries, warnings, anomalies, converged, closureReason };
 }

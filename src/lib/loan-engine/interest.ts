@@ -1,5 +1,9 @@
 import { Decimal } from "decimal.js";
-import type { CompoundingFrequency, DayCountConvention } from "./types";
+import type {
+  CompoundingFrequency,
+  DayCountConvention,
+  InterestCalculationMethod,
+} from "./types";
 import { daysBetween, dayCountFraction } from "./date-utils";
 
 /** Rate used only to size the EMI figure via the annuity formula — always
@@ -90,4 +94,42 @@ export function accrueCompoundInterest(
     remainingDays -= days;
   }
   return balance.minus(openingBalance);
+}
+
+/** Routes accrual through the correct formula for `calculationMethod`.
+ * REDUCING_BALANCE and SIMPLE both accrue as day-count simple interest
+ * (their difference is in how the *principal base* moves over time, not
+ * in this per-period accrual step) and stay change-point aware (mid-period
+ * disbursements); COMPOUND sub-compounds at `compounding` frequency and,
+ * because that's a genuinely different balance-growth model, doesn't
+ * support mid-period change points — it accrues on the balance as of the
+ * period's start. */
+export function accrueForMethod(
+  method: InterestCalculationMethod,
+  start: Date,
+  end: Date,
+  annualRatePercent: Decimal,
+  convention: DayCountConvention,
+  compounding: CompoundingFrequency,
+  balanceAt: (date: Date) => Decimal,
+  changePoints: Date[] = [],
+): Decimal {
+  if (method === "COMPOUND") {
+    return accrueCompoundInterest(
+      balanceAt(start),
+      annualRatePercent,
+      start,
+      end,
+      compounding,
+      convention,
+    );
+  }
+  return accruePeriodInterest(
+    start,
+    end,
+    annualRatePercent,
+    convention,
+    balanceAt,
+    changePoints,
+  );
 }

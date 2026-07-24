@@ -1,13 +1,8 @@
 "use server";
 
-import { Decimal } from "decimal.js";
 import { prisma } from "@/lib/db/client";
-import {
-  generateSchedule,
-  type DisbursementInput,
-  type LoanEngineInput,
-  type PaymentInput,
-} from "@/lib/loan-engine";
+import { generateSchedule } from "@/lib/loan-engine";
+import { mapLoanToEngineInput } from "./map-to-engine-input";
 
 /** Regenerates the full amortization schedule for a loan from scratch —
  * the single source of truth every other screen reads from. Full-rewrite,
@@ -25,65 +20,16 @@ export async function regenerateSchedule(loanId: string) {
     },
   });
 
-  if (!loan.settings) {
-    throw new Error(`Loan ${loanId} has no LoanSettings`);
-  }
-
-  const input: LoanEngineInput = {
-    sanctionDate: loan.sanctionDate,
-    interestRatePercent: new Decimal(loan.interestRate.toString()),
-    calculationMethod: loan.settings.calculationMethod,
-    compounding: loan.settings.compounding,
-    dayCountConvention: loan.settings.dayCountConvention,
-    paymentFrequency: loan.settings.paymentFrequency,
-    prepaymentStrategy: loan.settings.prepaymentStrategy,
-    emiType: loan.emiType,
-    loanTenureMonths: loan.loanTenureMonths,
-    repaymentTenureMonths: loan.repaymentTenureMonths,
-    emiStartDate: loan.emiStartDate,
-
-    hasMoratorium: loan.hasMoratorium,
-    moratoriumStartDate: loan.moratoriumStartDate,
-    moratoriumEndDate: loan.moratoriumEndDate,
-    moratoriumInterestPayment: loan.moratoriumInterestPayment,
-    moratoriumAvgMonthlyInterest: loan.moratoriumAvgMonthlyInterest
-      ? new Decimal(loan.moratoriumAvgMonthlyInterest.toString())
-      : null,
-    capitalizeUnpaidInterest: loan.capitalizeUnpaidInterest,
-
-    status: loan.status,
-
-    disbursements: loan.disbursements.map(
-      (d): DisbursementInput => ({
-        date: d.date,
-        amount: new Decimal(d.amount.toString()),
-      }),
-    ),
-    payments: loan.payments.map(
-      (p): PaymentInput => ({
-        date: p.date,
-        amount: new Decimal(p.amount.toString()),
-        type: p.type,
-        interestPaid: p.interestPaid ? new Decimal(p.interestPaid.toString()) : null,
-        principalPaid: p.principalPaid
-          ? new Decimal(p.principalPaid.toString())
-          : null,
-      }),
-    ),
-    importSnapshot: loan.importSnapshot
-      ? {
-          asOfDate: loan.importSnapshot.asOfDate,
-          outstandingPrincipal: new Decimal(
-            loan.importSnapshot.outstandingPrincipal.toString(),
-          ),
-          accruedInterest: new Decimal(
-            loan.importSnapshot.accruedInterest.toString(),
-          ),
-        }
-      : null,
-  };
-
+  const input = mapLoanToEngineInput(loan);
   const result = generateSchedule(input);
+
+  const today = new Date();
+  const finalEntry = result.entries[result.entries.length - 1];
+  const shouldCloseLoan =
+    result.converged &&
+    result.closureReason != null &&
+    finalEntry != null &&
+    finalEntry.dueDate <= today;
 
   await prisma.$transaction(async (tx) => {
     await tx.amortizationEntry.deleteMany({ where: { loanId } });
@@ -104,6 +50,9 @@ export async function regenerateSchedule(loanId: string) {
           status: e.status,
         })),
       });
+    }
+    if (shouldCloseLoan && loan.status !== "CLOSED") {
+      await tx.loan.update({ where: { id: loanId }, data: { status: "CLOSED" } });
     }
   });
 

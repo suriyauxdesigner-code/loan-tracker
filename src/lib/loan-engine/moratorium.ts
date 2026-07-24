@@ -1,5 +1,26 @@
 import { Decimal } from "decimal.js";
-import type { MoratoriumInterestPayment } from "./types";
+import type { CompoundingFrequency, MoratoriumInterestPayment } from "./types";
+
+/** Whether the Nth moratorium period (1-indexed) is a capitalization
+ * boundary at the given frequency — generalizes "capitalize every period"
+ * into "capitalize every period at this cadence," reusing the same
+ * `CompoundingFrequency` the loan already has instead of a raw boolean.
+ * DAILY is treated as MONTHLY here since moratorium periods are
+ * monthly-grain in this schedule (documented simplification). */
+export function isCapitalizationBoundary(
+  compounding: CompoundingFrequency,
+  periodIndex: number,
+): boolean {
+  switch (compounding) {
+    case "DAILY":
+    case "MONTHLY":
+      return true;
+    case "QUARTERLY":
+      return periodIndex % 3 === 0;
+    case "YEARLY":
+      return periodIndex % 12 === 0;
+  }
+}
 
 export interface MoratoriumPeriodResult {
   interestPaid: Decimal;

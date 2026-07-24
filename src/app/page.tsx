@@ -41,20 +41,22 @@ export default async function Home() {
 
       <div className="space-y-3">
         {user.loans.map((loan) => (
-          <Card key={loan.id}>
-            <CardHeader>
-              <div className="flex items-center gap-2">
-                <CardTitle>{loan.loanName}</CardTitle>
-                <Badge variant="secondary">{loan.loanType}</Badge>
-                <Badge variant="outline">{loan.status.replaceAll("_", " ")}</Badge>
-              </div>
-            </CardHeader>
-            <CardContent className="text-muted-foreground text-sm">
-              {loan.bankName} · {loan.currency} {loan.principalAmount.toString()}
-              {" · "}
-              {loan._count.amortizationEntries} scheduled entries
-            </CardContent>
-          </Card>
+          <Link key={loan.id} href={`/loans/${loan.id}`} className="block">
+            <Card className="hover:border-primary/50 transition-colors">
+              <CardHeader>
+                <div className="flex items-center gap-2">
+                  <CardTitle>{loan.loanName}</CardTitle>
+                  <Badge variant="secondary">{loan.loanType}</Badge>
+                  <Badge variant="outline">{loan.status.replaceAll("_", " ")}</Badge>
+                </div>
+              </CardHeader>
+              <CardContent className="text-muted-foreground text-sm">
+                {loan.bankName} · {loan.currency} {loan.principalAmount.toString()}
+                {" · "}
+                {loan._count.amortizationEntries} scheduled entries
+              </CardContent>
+            </Card>
+          </Link>
         ))}
       </div>
 
