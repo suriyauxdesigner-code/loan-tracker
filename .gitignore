@@ -34,6 +34,9 @@ yarn-error.log*
 .env*
 !.env.example
 
+# downloaded OAuth client secrets
+client_secret_*.json
+
 # vercel
 .vercel
 
