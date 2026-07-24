@@ -67,7 +67,7 @@ export default async function LoanOverviewPage({
         nextEmiAmount={metrics.nextEntry ? metrics.nextEntry.emiAmount.toFixed(2) : null}
         remainingEmiCount={metrics.remainingEmiCount}
         currentRate={loan.interestRate.toString()}
-        closureDate={metrics.closureDate}
+        closureDate={metrics.closureDate ? metrics.closureDate.toISOString() : null}
         trends={trends}
       />
 

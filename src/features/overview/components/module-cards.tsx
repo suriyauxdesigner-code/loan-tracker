@@ -63,7 +63,7 @@ export function ModuleCards({
     loanCount === 0
       ? "No loans yet"
       : `${loanCount} loan${loanCount === 1 ? "" : "s"} · ${outstandingByCurrency
-          .map((t) => `${t.currency} ${t.amount.toFixed(2)}`)
+          .map((t) => `${t.currency} ${t.amount}`)
           .join(", ")} outstanding`;
 
   return (

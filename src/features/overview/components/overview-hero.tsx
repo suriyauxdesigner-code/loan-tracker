@@ -7,8 +7,8 @@ import { Sparkline } from "@/components/ui/sparkline";
 import { MetricCard } from "@/features/shell/components/metric-card";
 import type { CurrencyTotal, CurrencyTrend, UpcomingEmiAcrossLoans } from "../aggregate-metrics";
 
-function fmtDate(d: Date) {
-  return d.toLocaleDateString("en-IN", { year: "numeric", month: "short", day: "numeric" });
+function fmtDate(iso: string) {
+  return new Date(iso).toLocaleDateString("en-IN", { year: "numeric", month: "short", day: "numeric" });
 }
 
 export function OverviewHero({
@@ -38,7 +38,7 @@ export function OverviewHero({
               <p className="text-muted-foreground text-sm font-medium">Total Outstanding Debt</p>
               {primary ? (
                 <p className="mt-1 text-4xl font-semibold tracking-tight tabular-nums sm:text-5xl">
-                  {primary.currency} {primary.amount.toFixed(2)}
+                  {primary.currency} {primary.amount}
                 </p>
               ) : (
                 <p className="mt-1 text-4xl font-semibold tracking-tight sm:text-5xl">—</p>
@@ -48,7 +48,7 @@ export function OverviewHero({
                   +
                   {outstandingByCurrency
                     .slice(1)
-                    .map((t) => `${t.currency} ${t.amount.toFixed(2)}`)
+                    .map((t) => `${t.currency} ${t.amount}`)
                     .join(", ")}{" "}
                   in other currencies
                 </p>
@@ -79,7 +79,7 @@ export function OverviewHero({
             icon={Calendar}
             tone="rose"
             label="Nearest Upcoming EMI"
-            value={`${nearestUpcomingEmi.currency} ${nearestUpcomingEmi.amount.toFixed(2)}`}
+            value={`${nearestUpcomingEmi.currency} ${nearestUpcomingEmi.amount}`}
             description={`${fmtDate(nearestUpcomingEmi.dueDate)} · ${nearestUpcomingEmi.loanName}`}
             href={`/finance/loans/${nearestUpcomingEmi.loanId}`}
           />

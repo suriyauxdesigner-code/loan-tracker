@@ -5,24 +5,30 @@ import { computeLoanMetrics } from "@/features/loans/metrics";
 import type { LoanWithRelations } from "@/features/loans/get-loan";
 import { buildRecentActivity, type ActivityEvent } from "@/features/loans-overview/recent-activity";
 
+/** Amounts here are formatted strings, not Decimal instances — this data
+ * flows into Client Components (framer-motion cards), and Decimal.js
+ * instances can't cross the Server->Client Component boundary (React's
+ * Flight serializer only understands plain data, not arbitrary class
+ * instances). Decimal precision is still used for all the summation below;
+ * only the final returned shape is stringified. */
 export interface CurrencyTotal {
   currency: string;
-  amount: Decimal;
+  amount: string;
 }
 
 export interface UpcomingEmiAcrossLoans {
   loanId: string;
   loanName: string;
   currency: string;
-  amount: Decimal;
-  dueDate: Date;
+  amount: string;
+  dueDate: string;
 }
 
 export interface LoanSummaryRow {
   loanId: string;
   loanName: string;
   currency: string;
-  outstanding: Decimal;
+  outstanding: string;
   completionPct: number;
 }
 
@@ -54,6 +60,7 @@ export function computeFinancialOverview(loans: LoanWithRelations[], now: Date):
   const outstandingByCurrency = new Map<string, Decimal>();
   const trendByCurrency = new Map<string, Map<string, Decimal>>();
   let nearestUpcomingEmi: UpcomingEmiAcrossLoans | null = null;
+  let nearestUpcomingEmiDueDate: Date | null = null;
   const loanSummaries: LoanSummaryRow[] = [];
   const activityByLoan: OverviewActivityEvent[] = [];
 
@@ -84,20 +91,21 @@ export function computeFinancialOverview(loans: LoanWithRelations[], now: Date):
       loanId: loan.id,
       loanName: loan.loanName,
       currency: loan.currency,
-      outstanding: metrics.outstanding,
+      outstanding: metrics.outstanding.toFixed(2),
       completionPct: metrics.completionPct,
     });
 
     if (
       metrics.nextEntry &&
-      (!nearestUpcomingEmi || metrics.nextEntry.dueDate < nearestUpcomingEmi.dueDate)
+      (!nearestUpcomingEmiDueDate || metrics.nextEntry.dueDate < nearestUpcomingEmiDueDate)
     ) {
+      nearestUpcomingEmiDueDate = metrics.nextEntry.dueDate;
       nearestUpcomingEmi = {
         loanId: loan.id,
         loanName: loan.loanName,
         currency: loan.currency,
-        amount: metrics.nextEntry.emiAmount,
-        dueDate: metrics.nextEntry.dueDate,
+        amount: metrics.nextEntry.emiAmount.toFixed(2),
+        dueDate: metrics.nextEntry.dueDate.toISOString(),
       };
     }
 
@@ -119,7 +127,7 @@ export function computeFinancialOverview(loans: LoanWithRelations[], now: Date):
     loanCount: loans.length,
     outstandingByCurrency: Array.from(outstandingByCurrency, ([currency, amount]) => ({
       currency,
-      amount,
+      amount: amount.toFixed(2),
     })),
     outstandingTrend,
     nearestUpcomingEmi,

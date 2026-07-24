@@ -1,3 +1,5 @@
+"use client";
+
 import {
   Calendar,
   CircleDollarSign,
@@ -12,9 +14,9 @@ import {
 import { MetricCard } from "@/features/shell/components/metric-card";
 import type { MetricTrends } from "../trends";
 
-function fmtDate(d: Date | null) {
-  return d
-    ? d.toLocaleDateString("en-IN", { year: "numeric", month: "short", day: "numeric" })
+function fmtDate(iso: string | null) {
+  return iso
+    ? new Date(iso).toLocaleDateString("en-IN", { year: "numeric", month: "short", day: "numeric" })
     : "—";
 }
 
@@ -42,7 +44,7 @@ export function HeroMetrics({
   nextEmiAmount: string | null;
   remainingEmiCount: number;
   currentRate: string;
-  closureDate: Date | null;
+  closureDate: string | null;
   trends: MetricTrends;
 }) {
   return (
