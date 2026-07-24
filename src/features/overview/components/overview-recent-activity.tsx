@@ -3,6 +3,7 @@ import { CircleDollarSign, History, Landmark, Receipt } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
+import { IconContainer, type IconTone } from "@/components/ui/icon-container";
 import type { ActivityEvent } from "@/features/loans-overview/recent-activity";
 import type { OverviewActivityEvent } from "../aggregate-metrics";
 
@@ -10,6 +11,12 @@ const ICONS: Record<ActivityEvent["kind"], LucideIcon> = {
   LOAN_CREATED: Landmark,
   DISBURSEMENT: CircleDollarSign,
   PAYMENT: Receipt,
+};
+
+const TONES: Record<ActivityEvent["kind"], IconTone> = {
+  LOAN_CREATED: "violet",
+  DISBURSEMENT: "sky",
+  PAYMENT: "emerald",
 };
 
 export function OverviewRecentActivity({ events }: { events: OverviewActivityEvent[] }) {
@@ -26,31 +33,26 @@ export function OverviewRecentActivity({ events }: { events: OverviewActivityEve
             description="Disbursements and payments across your loans will show up here."
           />
         ) : (
-          <ul className="space-y-3">
-            {events.map((event, i) => {
-              const Icon = ICONS[event.kind];
-              return (
-                <li key={i}>
-                  <Link
-                    href={`/finance/loans/${event.loanId}`}
-                    className="hover:bg-muted/40 -mx-2 flex items-start gap-3 rounded-md px-2 py-1"
-                  >
-                    <div className="bg-muted rounded-full p-1.5">
-                      <Icon className="size-3.5" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium">{event.title}</p>
-                      <p className="text-muted-foreground text-xs">
-                        {event.detail} · {event.loanName}
-                      </p>
-                    </div>
-                    <p className="text-muted-foreground shrink-0 text-xs">
-                      {event.date.toLocaleDateString("en-IN", { month: "short", day: "numeric" })}
+          <ul className="space-y-1">
+            {events.map((event, i) => (
+              <li key={i}>
+                <Link
+                  href={`/finance/loans/${event.loanId}`}
+                  className="hover:bg-muted/40 -mx-2 flex items-center gap-3 rounded-md px-2 py-1.5 transition-colors"
+                >
+                  <IconContainer icon={ICONS[event.kind]} tone={TONES[event.kind]} size="sm" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium">{event.title}</p>
+                    <p className="text-muted-foreground text-xs">
+                      {event.detail} · {event.loanName}
                     </p>
-                  </Link>
-                </li>
-              );
-            })}
+                  </div>
+                  <p className="text-muted-foreground shrink-0 text-xs">
+                    {event.date.toLocaleDateString("en-IN", { month: "short", day: "numeric" })}
+                  </p>
+                </Link>
+              </li>
+            ))}
           </ul>
         )}
       </CardContent>

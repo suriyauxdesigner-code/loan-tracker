@@ -9,38 +9,13 @@ import {
   TrendingUp,
   Wallet,
 } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
-import { Card, CardContent } from "@/components/ui/card";
+import { MetricCard } from "@/features/shell/components/metric-card";
+import type { MetricTrends } from "../trends";
 
 function fmtDate(d: Date | null) {
   return d
     ? d.toLocaleDateString("en-IN", { year: "numeric", month: "short", day: "numeric" })
     : "—";
-}
-
-function MetricCard({
-  icon: Icon,
-  label,
-  value,
-  sub,
-}: {
-  icon: LucideIcon;
-  label: string;
-  value: string;
-  sub?: string;
-}) {
-  return (
-    <Card>
-      <CardContent className="flex items-start justify-between gap-2 p-4">
-        <div className="min-w-0">
-          <p className="text-muted-foreground text-xs">{label}</p>
-          <p className="truncate text-xl font-semibold tracking-tight">{value}</p>
-          {sub && <p className="text-muted-foreground mt-0.5 text-xs">{sub}</p>}
-        </div>
-        <Icon className="text-muted-foreground size-4 shrink-0" />
-      </CardContent>
-    </Card>
-  );
 }
 
 export function HeroMetrics({
@@ -55,6 +30,7 @@ export function HeroMetrics({
   remainingEmiCount,
   currentRate,
   closureDate,
+  trends,
 }: {
   currency: string;
   outstanding: string;
@@ -67,23 +43,59 @@ export function HeroMetrics({
   remainingEmiCount: number;
   currentRate: string;
   closureDate: Date | null;
+  trends: MetricTrends;
 }) {
   return (
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-      <MetricCard icon={Wallet} label="Current Outstanding" value={`${currency} ${outstanding}`} />
-      <MetricCard icon={Landmark} label="Original Loan Amount" value={`${currency} ${principalAmount}`} />
-      <MetricCard icon={PiggyBank} label="Principal Repaid" value={`${currency} ${principalRepaid}`} />
-      <MetricCard icon={TrendingDown} label="Interest Paid" value={`${currency} ${interestPaid}`} />
-      <MetricCard icon={TrendingUp} label="Interest Accrued" value={`${currency} ${interestAccrued}`} />
-      <MetricCard icon={CircleDollarSign} label="Remaining Principal" value={`${currency} ${remainingPrincipal}`} />
       <MetricCard
         icon={Wallet}
+        tone="violet"
+        label="Current Outstanding"
+        value={`${currency} ${outstanding}`}
+        sparklineData={trends.outstanding}
+      />
+      <MetricCard
+        icon={Landmark}
+        tone="violet"
+        label="Original Loan Amount"
+        value={`${currency} ${principalAmount}`}
+      />
+      <MetricCard
+        icon={PiggyBank}
+        tone="emerald"
+        label="Principal Repaid"
+        value={`${currency} ${principalRepaid}`}
+        sparklineData={trends.principalRepaid}
+      />
+      <MetricCard
+        icon={TrendingDown}
+        tone="amber"
+        label="Interest Paid"
+        value={`${currency} ${interestPaid}`}
+        sparklineData={trends.interestPaid}
+      />
+      <MetricCard
+        icon={TrendingUp}
+        tone="amber"
+        label="Interest Accrued"
+        value={`${currency} ${interestAccrued}`}
+        sparklineData={trends.interestAccrued}
+      />
+      <MetricCard
+        icon={CircleDollarSign}
+        tone="sky"
+        label="Remaining Principal"
+        value={`${currency} ${remainingPrincipal}`}
+      />
+      <MetricCard
+        icon={Wallet}
+        tone="rose"
         label="Next EMI"
         value={nextEmiAmount ? `${currency} ${nextEmiAmount}` : "—"}
       />
-      <MetricCard icon={ListOrdered} label="Remaining EMIs" value={String(remainingEmiCount)} />
-      <MetricCard icon={Percent} label="Current Interest Rate" value={`${currentRate}% p.a.`} />
-      <MetricCard icon={Calendar} label="Expected Closure" value={fmtDate(closureDate)} />
+      <MetricCard icon={ListOrdered} tone="slate" label="Remaining EMIs" value={String(remainingEmiCount)} />
+      <MetricCard icon={Percent} tone="slate" label="Current Interest Rate" value={`${currentRate}% p.a.`} />
+      <MetricCard icon={Calendar} tone="slate" label="Expected Closure" value={fmtDate(closureDate)} />
     </div>
   );
 }

@@ -17,11 +17,17 @@ export default async function DashboardPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-2xl font-semibold tracking-tight">Financial Overview</h1>
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">Financial Overview</h1>
+        <p className="text-muted-foreground text-sm">
+          Everything that matters across your finances, at a glance.
+        </p>
+      </div>
 
       <OverviewHero
         loanCount={overview.loanCount}
         outstandingByCurrency={overview.outstandingByCurrency}
+        outstandingTrend={overview.outstandingTrend}
         nearestUpcomingEmi={overview.nearestUpcomingEmi}
       />
 

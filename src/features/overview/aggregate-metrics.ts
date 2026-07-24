@@ -31,9 +31,15 @@ export interface OverviewActivityEvent extends ActivityEvent {
   loanName: string;
 }
 
+export interface CurrencyTrend {
+  currency: string;
+  points: number[];
+}
+
 export interface FinancialOverview {
   loanCount: number;
   outstandingByCurrency: CurrencyTotal[];
+  outstandingTrend: CurrencyTrend[];
   nearestUpcomingEmi: UpcomingEmiAcrossLoans | null;
   loanSummaries: LoanSummaryRow[];
   recentActivity: OverviewActivityEvent[];
@@ -46,6 +52,7 @@ export interface FinancialOverview {
  * loans can be in different currencies. */
 export function computeFinancialOverview(loans: LoanWithRelations[], now: Date): FinancialOverview {
   const outstandingByCurrency = new Map<string, Decimal>();
+  const trendByCurrency = new Map<string, Map<string, Decimal>>();
   let nearestUpcomingEmi: UpcomingEmiAcrossLoans | null = null;
   const loanSummaries: LoanSummaryRow[] = [];
   const activityByLoan: OverviewActivityEvent[] = [];
@@ -65,6 +72,13 @@ export function computeFinancialOverview(loans: LoanWithRelations[], now: Date):
       loan.currency,
       (outstandingByCurrency.get(loan.currency) ?? new Decimal(0)).plus(metrics.outstanding),
     );
+
+    const monthBuckets = trendByCurrency.get(loan.currency) ?? new Map<string, Decimal>();
+    for (const entry of result.entries) {
+      const key = `${entry.dueDate.getFullYear()}-${String(entry.dueDate.getMonth() + 1).padStart(2, "0")}`;
+      monthBuckets.set(key, (monthBuckets.get(key) ?? new Decimal(0)).plus(entry.closingBalance));
+    }
+    trendByCurrency.set(loan.currency, monthBuckets);
 
     loanSummaries.push({
       loanId: loan.id,
@@ -96,12 +110,18 @@ export function computeFinancialOverview(loans: LoanWithRelations[], now: Date):
     .sort((a, b) => b.date.getTime() - a.date.getTime())
     .slice(0, 8);
 
+  const outstandingTrend: CurrencyTrend[] = Array.from(trendByCurrency, ([currency, buckets]) => {
+    const sortedKeys = Array.from(buckets.keys()).sort();
+    return { currency, points: sortedKeys.map((key) => buckets.get(key)!.toNumber()) };
+  });
+
   return {
     loanCount: loans.length,
     outstandingByCurrency: Array.from(outstandingByCurrency, ([currency, amount]) => ({
       currency,
       amount,
     })),
+    outstandingTrend,
     nearestUpcomingEmi,
     loanSummaries,
     recentActivity,

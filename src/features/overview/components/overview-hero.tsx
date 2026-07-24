@@ -1,82 +1,92 @@
-import Link from "next/link";
-import { Calendar, Landmark, Wallet } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
-import { Card, CardContent } from "@/components/ui/card";
-import type { CurrencyTotal, UpcomingEmiAcrossLoans } from "../aggregate-metrics";
+"use client";
+
+import { motion } from "framer-motion";
+import { Calendar, Landmark } from "lucide-react";
+import { Card } from "@/components/ui/card";
+import { Sparkline } from "@/components/ui/sparkline";
+import { MetricCard } from "@/features/shell/components/metric-card";
+import type { CurrencyTotal, CurrencyTrend, UpcomingEmiAcrossLoans } from "../aggregate-metrics";
 
 function fmtDate(d: Date) {
   return d.toLocaleDateString("en-IN", { year: "numeric", month: "short", day: "numeric" });
 }
 
-function MetricCard({
-  icon: Icon,
-  label,
-  value,
-  sub,
-  href,
-}: {
-  icon: LucideIcon;
-  label: string;
-  value: string;
-  sub?: string;
-  href?: string;
-}) {
-  const content = (
-    <Card className={href ? "hover:border-primary/50 transition-colors" : undefined}>
-      <CardContent className="flex items-start justify-between gap-2 p-4">
-        <div className="min-w-0">
-          <p className="text-muted-foreground text-xs">{label}</p>
-          <p className="truncate text-xl font-semibold tracking-tight">{value}</p>
-          {sub && <p className="text-muted-foreground mt-0.5 text-xs">{sub}</p>}
-        </div>
-        <Icon className="text-muted-foreground size-4 shrink-0" />
-      </CardContent>
-    </Card>
-  );
-  return href ? <Link href={href}>{content}</Link> : content;
-}
-
 export function OverviewHero({
   loanCount,
   outstandingByCurrency,
+  outstandingTrend,
   nearestUpcomingEmi,
 }: {
   loanCount: number;
   outstandingByCurrency: CurrencyTotal[];
+  outstandingTrend: CurrencyTrend[];
   nearestUpcomingEmi: UpcomingEmiAcrossLoans | null;
 }) {
+  const primary = outstandingByCurrency[0];
+  const trend = outstandingTrend.find((t) => t.currency === primary?.currency);
+
   return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-      <MetricCard
-        icon={Landmark}
-        label="Active Loans"
-        value={String(loanCount)}
-        href="/finance/loans"
-      />
-      {outstandingByCurrency.length > 0 ? (
-        outstandingByCurrency.map((t) => (
-          <MetricCard
-            key={t.currency}
-            icon={Wallet}
-            label="Total Outstanding Debt"
-            value={`${t.currency} ${t.amount.toFixed(2)}`}
-            href="/finance/loans"
-          />
-        ))
-      ) : (
-        <MetricCard icon={Wallet} label="Total Outstanding Debt" value="—" />
-      )}
-      {nearestUpcomingEmi ? (
+    <div className="flex flex-col gap-4">
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.3, ease: "easeOut" }}
+      >
+        <Card className="bg-hero-gradient relative overflow-hidden">
+          <div className="flex flex-col gap-6 px-6 py-6 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <p className="text-muted-foreground text-sm font-medium">Total Outstanding Debt</p>
+              {primary ? (
+                <p className="mt-1 text-4xl font-semibold tracking-tight tabular-nums sm:text-5xl">
+                  {primary.currency} {primary.amount.toFixed(2)}
+                </p>
+              ) : (
+                <p className="mt-1 text-4xl font-semibold tracking-tight sm:text-5xl">—</p>
+              )}
+              {outstandingByCurrency.length > 1 && (
+                <p className="text-muted-foreground mt-1 text-xs">
+                  +
+                  {outstandingByCurrency
+                    .slice(1)
+                    .map((t) => `${t.currency} ${t.amount.toFixed(2)}`)
+                    .join(", ")}{" "}
+                  in other currencies
+                </p>
+              )}
+              <p className="text-muted-foreground mt-2 text-xs">
+                Across {loanCount} active loan{loanCount === 1 ? "" : "s"}
+              </p>
+            </div>
+            {trend && trend.points.length > 1 && (
+              <div className="w-full sm:w-56">
+                <Sparkline data={trend.points} tone="violet" height={64} />
+              </div>
+            )}
+          </div>
+        </Card>
+      </motion.div>
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <MetricCard
-          icon={Calendar}
-          label="Nearest Upcoming EMI"
-          value={`${nearestUpcomingEmi.currency} ${nearestUpcomingEmi.amount.toFixed(2)}`}
-          sub={`${fmtDate(nearestUpcomingEmi.dueDate)} · ${nearestUpcomingEmi.loanName}`}
-          href={`/finance/loans/${nearestUpcomingEmi.loanId}`}
+          icon={Landmark}
+          tone="slate"
+          label="Active Loans"
+          value={String(loanCount)}
+          href="/finance/loans"
         />
-      ) : (
-        <MetricCard icon={Calendar} label="Nearest Upcoming EMI" value="—" />
-      )}
+        {nearestUpcomingEmi ? (
+          <MetricCard
+            icon={Calendar}
+            tone="rose"
+            label="Nearest Upcoming EMI"
+            value={`${nearestUpcomingEmi.currency} ${nearestUpcomingEmi.amount.toFixed(2)}`}
+            description={`${fmtDate(nearestUpcomingEmi.dueDate)} · ${nearestUpcomingEmi.loanName}`}
+            href={`/finance/loans/${nearestUpcomingEmi.loanId}`}
+          />
+        ) : (
+          <MetricCard icon={Calendar} tone="rose" label="Nearest Upcoming EMI" value="—" />
+        )}
+      </div>
     </div>
   );
 }

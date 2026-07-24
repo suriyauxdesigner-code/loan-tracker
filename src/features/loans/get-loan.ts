@@ -49,3 +49,17 @@ export const getLoansForUser = cache(async () => {
  * a null settings at runtime, so this is the correct type to pass around
  * for any multi-loan aggregation. */
 export type LoanWithRelations = Awaited<ReturnType<typeof getLoansForUser>>[number];
+
+/** Lean id+name-only loan list — deliberately NOT reusing getLoansForUser's
+ * full include, since this is mounted on every page (command palette lives
+ * in AppShell) and shouldn't drag disbursements/payments/importSnapshot
+ * into routes that never needed them. */
+export const getLoanNamesForUser = cache(async () => {
+  const email = await getCurrentUserEmail();
+
+  return prisma.loan.findMany({
+    where: { user: { email } },
+    select: { id: true, loanName: true },
+    orderBy: { createdAt: "asc" },
+  });
+});

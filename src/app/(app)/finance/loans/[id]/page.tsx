@@ -7,6 +7,7 @@ import { computeLoanMetrics } from "@/features/loans/metrics";
 import { buildLoanTimeline } from "@/features/loans/stage";
 import { computeInterestSaved } from "@/features/loans/interest-saved";
 import { buildRecentActivity } from "@/features/loans-overview/recent-activity";
+import { computeMetricTrends } from "@/features/loans-overview/trends";
 import { HeroMetrics } from "@/features/loans-overview/components/hero-metrics";
 import { LoanProgress } from "@/features/loans-overview/components/loan-progress";
 import { QuickActions } from "@/features/loans-overview/components/quick-actions";
@@ -37,6 +38,7 @@ export default async function LoanOverviewPage({
   const timeline = buildLoanTimeline(loan, metrics.closureDate, now);
   const interestSaved = computeInterestSaved(input, result);
   const recentActivity = buildRecentActivity(loan);
+  const trends = computeMetricTrends(result.entries);
 
   return (
     <div className="flex flex-col gap-6">
@@ -66,6 +68,7 @@ export default async function LoanOverviewPage({
         remainingEmiCount={metrics.remainingEmiCount}
         currentRate={loan.interestRate.toString()}
         closureDate={metrics.closureDate}
+        trends={trends}
       />
 
       <div className="grid gap-6 lg:grid-cols-3">

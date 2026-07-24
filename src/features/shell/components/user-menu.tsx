@@ -21,7 +21,7 @@ export function UserMenu({ email }: { email: string }) {
     <DropdownMenu>
       <DropdownMenuTrigger
         render={
-          <button className="bg-primary text-primary-foreground flex size-8 items-center justify-center rounded-full text-xs font-semibold">
+          <button className="from-primary to-primary/60 text-primary-foreground ring-background flex size-8 items-center justify-center rounded-full bg-gradient-to-br text-xs font-semibold ring-2">
             {initials(email)}
           </button>
         }

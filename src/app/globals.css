@@ -46,6 +46,9 @@
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
+  --shadow-card: var(--card-shadow);
+  --shadow-elevated: var(--elevated-shadow);
+  --shadow-hover: var(--hover-shadow);
 }
 
 :root {
@@ -67,11 +70,11 @@
   --border: oklch(0.922 0 0);
   --input: oklch(0.922 0 0);
   --ring: oklch(62.7% 0.265 303.9);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
+  --chart-1: var(--primary);
+  --chart-2: oklch(0.696 0.17 162.48);
+  --chart-3: oklch(0.769 0.188 70.08);
+  --chart-4: oklch(0.685 0.169 237.323);
+  --chart-5: oklch(0.645 0.246 16.439);
   --radius: 0.625rem;
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
@@ -81,6 +84,9 @@
   --sidebar-accent-foreground: oklch(43.8% 0.218 303.724);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(62.7% 0.265 303.9);
+  --card-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.04), 0 8px 24px -8px color-mix(in oklch, var(--primary) 30%, transparent);
+  --elevated-shadow: 0 2px 4px 0 rgb(0 0 0 / 0.04), 0 16px 40px -12px color-mix(in oklch, var(--primary) 35%, transparent);
+  --hover-shadow: 0 4px 8px 0 rgb(0 0 0 / 0.05), 0 20px 48px -12px color-mix(in oklch, var(--primary) 40%, transparent);
 }
 
 .dark {
@@ -102,11 +108,11 @@
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(71.4% 0.203 305.504);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
+  --chart-1: var(--primary);
+  --chart-2: oklch(0.765 0.177 163.223);
+  --chart-3: oklch(0.828 0.189 84.429);
+  --chart-4: oklch(0.746 0.16 232.661);
+  --chart-5: oklch(0.712 0.194 13.428);
   --sidebar: oklch(0.205 0 0);
   --sidebar-foreground: oklch(0.985 0 0);
   --sidebar-primary: oklch(71.4% 0.203 305.504);
@@ -115,6 +121,9 @@
   --sidebar-accent-foreground: oklch(90.2% 0.063 306.703);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(71.4% 0.203 305.504);
+  --card-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.2), 0 8px 24px -8px rgb(0 0 0 / 0.35);
+  --elevated-shadow: 0 2px 4px 0 rgb(0 0 0 / 0.24), 0 16px 40px -12px rgb(0 0 0 / 0.5);
+  --hover-shadow: 0 4px 8px 0 rgb(0 0 0 / 0.28), 0 20px 48px -12px rgb(0 0 0 / 0.6);
 }
 
 @layer base {
@@ -126,5 +135,17 @@
   }
   html {
     @apply font-sans;
+  }
+}
+
+@layer components {
+  .bg-hero-gradient {
+    background-image:
+      radial-gradient(
+        120% 140% at 100% 0%,
+        color-mix(in oklch, var(--primary) 16%, transparent),
+        transparent 60%
+      ),
+      linear-gradient(180deg, color-mix(in oklch, var(--primary) 6%, transparent), transparent 70%);
   }
 }

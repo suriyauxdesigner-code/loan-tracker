@@ -28,7 +28,7 @@ export function MobileNav() {
         <SheetHeader className="border-b py-3">
           <SheetTitle>FinanceOS</SheetTitle>
         </SheetHeader>
-        <SidebarNav />
+        <SidebarNav variant="mobile" />
       </SheetContent>
     </Sheet>
   );
