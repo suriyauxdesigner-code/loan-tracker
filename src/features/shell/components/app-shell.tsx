@@ -33,7 +33,9 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
             <UserMenu email={email} />
           </div>
         </header>
-        <main className="flex flex-1 flex-col gap-6 p-4 lg:p-8">{children}</main>
+        <main className="mx-auto flex w-full max-w-[1400px] flex-1 flex-col gap-6 p-4 lg:p-8">
+          {children}
+        </main>
       </div>
     </div>
   );

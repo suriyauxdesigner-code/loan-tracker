@@ -225,9 +225,9 @@ export function ScheduleTable({
         </Button>
       </div>
 
-      <div className="max-h-[32rem] overflow-y-auto rounded-lg border">
+      <div className="max-h-[32rem] overflow-hidden overflow-y-auto rounded-xl border">
         <Table>
-          <TableHeader className="bg-background sticky top-0">
+          <TableHeader className="bg-card sticky top-0 z-10">
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id}>
                 {headerGroup.headers.map((header) => (
@@ -260,10 +260,10 @@ export function ScheduleTable({
                 </TableCell>
               </TableRow>
             )}
-            {table.getRowModel().rows.map((row) => (
+            {table.getRowModel().rows.map((row, i) => (
               <TableRow
                 key={row.id}
-                className="hover:bg-muted/40 cursor-pointer"
+                className={`hover:bg-muted/50 cursor-pointer transition-colors ${i % 2 === 1 ? "bg-muted/20" : ""}`}
                 onClick={() => setSelected(row.original)}
               >
                 {row.getVisibleCells().map((cell) => (

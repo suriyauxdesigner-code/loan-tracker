@@ -1,18 +1,24 @@
 import Link from "next/link";
-import { Landmark, Plus } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { Calendar, Landmark, Plus, Wallet } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { getLoansForUser } from "@/features/loans/get-loan";
+import { computeFinancialOverview } from "@/features/overview/aggregate-metrics";
+import { MetricCard } from "@/features/shell/components/metric-card";
+import { LoansTable } from "@/features/loans-list/components/loans-table";
 
 export default async function LoansListPage() {
   const loans = await getLoansForUser();
 
   return (
-    <div className="mx-auto flex w-full max-w-2xl flex-col gap-6">
+    <div className="flex w-full flex-col gap-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold tracking-tight">Loans</h1>
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Loans</h1>
+          <p className="text-muted-foreground text-sm">
+            Every loan you&apos;re tracking, in one place.
+          </p>
+        </div>
         <Button size="sm" render={<Link href="/finance/loans/new" />}>
           <Plus />
           Add loan
@@ -31,27 +37,61 @@ export default async function LoansListPage() {
           }
         />
       ) : (
-        <div className="space-y-3">
-          {loans.map((loan) => (
-            <Link key={loan.id} href={`/finance/loans/${loan.id}`} className="block">
-              <Card className="hover:border-primary/50 transition-colors">
-                <CardHeader>
-                  <div className="flex items-center gap-2">
-                    <CardTitle>{loan.loanName}</CardTitle>
-                    <Badge variant="secondary">{loan.loanType.replaceAll("_", " ")}</Badge>
-                    <Badge variant="outline">{loan.status.replaceAll("_", " ")}</Badge>
-                  </div>
-                </CardHeader>
-                <CardContent className="text-muted-foreground text-sm">
-                  {loan.bankName} · {loan.currency} {loan.principalAmount.toString()}
-                  {" · "}
-                  {loan._count.amortizationEntries} scheduled entries
-                </CardContent>
-              </Card>
-            </Link>
-          ))}
-        </div>
+        <LoansContent loans={loans} />
       )}
+    </div>
+  );
+}
+
+async function LoansContent({ loans }: { loans: Awaited<ReturnType<typeof getLoansForUser>> }) {
+  const now = new Date();
+  const overview = computeFinancialOverview(loans, now);
+
+  return (
+    <div className="flex flex-col gap-6">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <MetricCard icon={Landmark} tone="violet" label="Active Loans" value={String(overview.loanCount)} />
+        <MetricCard
+          icon={Wallet}
+          tone="rose"
+          label="Total Outstanding"
+          value={
+            overview.outstandingByCurrency[0]
+              ? `${overview.outstandingByCurrency[0].currency} ${overview.outstandingByCurrency[0].amount}`
+              : "—"
+          }
+        />
+        <MetricCard
+          icon={Wallet}
+          tone="amber"
+          label="Monthly EMI"
+          value={
+            overview.monthlyEmiByCurrency[0]
+              ? `${overview.monthlyEmiByCurrency[0].currency} ${overview.monthlyEmiByCurrency[0].amount}`
+              : "—"
+          }
+        />
+        <MetricCard
+          icon={Calendar}
+          tone="sky"
+          label="Next EMI Due"
+          value={
+            overview.nearestUpcomingEmi
+              ? `${overview.nearestUpcomingEmi.currency} ${overview.nearestUpcomingEmi.amount}`
+              : "—"
+          }
+          description={
+            overview.nearestUpcomingEmi
+              ? new Date(overview.nearestUpcomingEmi.dueDate).toLocaleDateString("en-IN", {
+                  month: "short",
+                  day: "numeric",
+                })
+              : undefined
+          }
+        />
+      </div>
+
+      <LoansTable rows={overview.loanSummaries} />
     </div>
   );
 }

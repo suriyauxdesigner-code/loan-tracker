@@ -2,6 +2,7 @@ import { Decimal } from "decimal.js";
 import { generateSchedule } from "@/lib/loan-engine";
 import { mapLoanToEngineInput } from "@/features/loan-engine/map-to-engine-input";
 import { computeLoanMetrics } from "@/features/loans/metrics";
+import { deriveLoanStage, type LoanStage } from "@/features/loans/stage";
 import type { LoanWithRelations } from "@/features/loans/get-loan";
 import { buildRecentActivity, type ActivityEvent } from "@/features/loans-overview/recent-activity";
 
@@ -27,8 +28,16 @@ export interface UpcomingEmiAcrossLoans {
 export interface LoanSummaryRow {
   loanId: string;
   loanName: string;
+  loanAccountNumber: string | null;
+  bankName: string;
+  loanType: string;
+  status: string;
+  stage: LoanStage;
   currency: string;
   outstanding: string;
+  interestRate: string;
+  monthlyEmi: string | null;
+  nextEmiDate: string | null;
   completionPct: number;
 }
 
@@ -45,6 +54,7 @@ export interface CurrencyTrend {
 export interface FinancialOverview {
   loanCount: number;
   outstandingByCurrency: CurrencyTotal[];
+  monthlyEmiByCurrency: CurrencyTotal[];
   outstandingTrend: CurrencyTrend[];
   nearestUpcomingEmi: UpcomingEmiAcrossLoans | null;
   loanSummaries: LoanSummaryRow[];
@@ -58,6 +68,7 @@ export interface FinancialOverview {
  * loans can be in different currencies. */
 export function computeFinancialOverview(loans: LoanWithRelations[], now: Date): FinancialOverview {
   const outstandingByCurrency = new Map<string, Decimal>();
+  const monthlyEmiByCurrency = new Map<string, Decimal>();
   const trendByCurrency = new Map<string, Map<string, Decimal>>();
   let nearestUpcomingEmi: UpcomingEmiAcrossLoans | null = null;
   let nearestUpcomingEmiDueDate: Date | null = null;
@@ -80,6 +91,13 @@ export function computeFinancialOverview(loans: LoanWithRelations[], now: Date):
       (outstandingByCurrency.get(loan.currency) ?? new Decimal(0)).plus(metrics.outstanding),
     );
 
+    if (metrics.nextEntry) {
+      monthlyEmiByCurrency.set(
+        loan.currency,
+        (monthlyEmiByCurrency.get(loan.currency) ?? new Decimal(0)).plus(metrics.nextEntry.emiAmount),
+      );
+    }
+
     const monthBuckets = trendByCurrency.get(loan.currency) ?? new Map<string, Decimal>();
     for (const entry of result.entries) {
       const key = `${entry.dueDate.getFullYear()}-${String(entry.dueDate.getMonth() + 1).padStart(2, "0")}`;
@@ -90,8 +108,16 @@ export function computeFinancialOverview(loans: LoanWithRelations[], now: Date):
     loanSummaries.push({
       loanId: loan.id,
       loanName: loan.loanName,
+      loanAccountNumber: loan.loanAccountNumber,
+      bankName: loan.bankName,
+      loanType: loan.loanType,
+      status: loan.status,
+      stage: deriveLoanStage(loan, now),
       currency: loan.currency,
       outstanding: metrics.outstanding.toFixed(2),
+      interestRate: loan.interestRate.toString(),
+      monthlyEmi: metrics.nextEntry ? metrics.nextEntry.emiAmount.toFixed(2) : null,
+      nextEmiDate: metrics.nextEntry ? metrics.nextEntry.dueDate.toISOString() : null,
       completionPct: metrics.completionPct,
     });
 
@@ -126,6 +152,10 @@ export function computeFinancialOverview(loans: LoanWithRelations[], now: Date):
   return {
     loanCount: loans.length,
     outstandingByCurrency: Array.from(outstandingByCurrency, ([currency, amount]) => ({
+      currency,
+      amount: amount.toFixed(2),
+    })),
+    monthlyEmiByCurrency: Array.from(monthlyEmiByCurrency, ([currency, amount]) => ({
       currency,
       amount: amount.toFixed(2),
     })),
