@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { defineConfig, env } from "prisma/config";
+import { defineConfig } from "prisma/config";
 
 export default defineConfig({
   schema: "prisma/schema.prisma",
@@ -12,6 +12,12 @@ export default defineConfig({
     // prepared statements migrations rely on. The app's runtime client
     // (src/lib/db/client.ts) connects with DATABASE_URL (pooled) instead,
     // independent of this config.
-    url: env("DIRECT_URL"),
+    //
+    // Read directly from process.env (not the `env()` helper) because that
+    // helper throws immediately if the var is unset — and `prisma generate`,
+    // which runs in postinstall on every deploy, doesn't need a DB
+    // connection at all and shouldn't fail just because DIRECT_URL isn't
+    // configured yet in that environment.
+    url: process.env.DIRECT_URL,
   },
 });
