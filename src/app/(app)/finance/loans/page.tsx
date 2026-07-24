@@ -1,10 +1,10 @@
 import Link from "next/link";
-import { Calendar, Landmark, Plus, Wallet } from "lucide-react";
+import { Landmark, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { getLoansForUser } from "@/features/loans/get-loan";
 import { computeFinancialOverview } from "@/features/overview/aggregate-metrics";
-import { MetricCard } from "@/features/shell/components/metric-card";
+import { LoansKpiRow } from "@/features/loans-list/components/loans-kpi-row";
 import { LoansTable } from "@/features/loans-list/components/loans-table";
 
 export default async function LoansListPage() {
@@ -49,47 +49,30 @@ async function LoansContent({ loans }: { loans: Awaited<ReturnType<typeof getLoa
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <MetricCard icon={Landmark} tone="violet" label="Active Loans" value={String(overview.loanCount)} />
-        <MetricCard
-          icon={Wallet}
-          tone="rose"
-          label="Total Outstanding"
-          value={
-            overview.outstandingByCurrency[0]
-              ? `${overview.outstandingByCurrency[0].currency} ${overview.outstandingByCurrency[0].amount}`
-              : "—"
-          }
-        />
-        <MetricCard
-          icon={Wallet}
-          tone="amber"
-          label="Monthly EMI"
-          value={
-            overview.monthlyEmiByCurrency[0]
-              ? `${overview.monthlyEmiByCurrency[0].currency} ${overview.monthlyEmiByCurrency[0].amount}`
-              : "—"
-          }
-        />
-        <MetricCard
-          icon={Calendar}
-          tone="sky"
-          label="Next EMI Due"
-          value={
-            overview.nearestUpcomingEmi
-              ? `${overview.nearestUpcomingEmi.currency} ${overview.nearestUpcomingEmi.amount}`
-              : "—"
-          }
-          description={
-            overview.nearestUpcomingEmi
-              ? new Date(overview.nearestUpcomingEmi.dueDate).toLocaleDateString("en-IN", {
+      <LoansKpiRow
+        loanCount={overview.loanCount}
+        totalOutstanding={
+          overview.outstandingByCurrency[0]
+            ? `${overview.outstandingByCurrency[0].currency} ${overview.outstandingByCurrency[0].amount}`
+            : "—"
+        }
+        monthlyEmi={
+          overview.monthlyEmiByCurrency[0]
+            ? `${overview.monthlyEmiByCurrency[0].currency} ${overview.monthlyEmiByCurrency[0].amount}`
+            : "—"
+        }
+        nextEmi={
+          overview.nearestUpcomingEmi
+            ? {
+                value: `${overview.nearestUpcomingEmi.currency} ${overview.nearestUpcomingEmi.amount}`,
+                date: new Date(overview.nearestUpcomingEmi.dueDate).toLocaleDateString("en-IN", {
                   month: "short",
                   day: "numeric",
-                })
-              : undefined
-          }
-        />
-      </div>
+                }),
+              }
+            : null
+        }
+      />
 
       <LoansTable rows={overview.loanSummaries} />
     </div>
