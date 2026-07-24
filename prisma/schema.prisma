@@ -1,0 +1,227 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// --- MVP scope (phases 3-10): setup wizard, loan/amortization engine,
+// payment tracker, dashboard, interest accrual cron.
+// Reports, notifications, and analytics-cache tables are added in their
+// own later phases rather than stubbed out early.
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  createdAt DateTime @default(now())
+
+  loans Loan[]
+}
+
+model Loan {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Personal / identifying details
+  bankName          String
+  loanName          String
+  loanAccountNumber String?
+  currency          String @default("INR")
+
+  // Core loan terms
+  principalAmount       Decimal      @db.Decimal(18, 2)
+  sanctionDate          DateTime
+  interestRate          Decimal      @db.Decimal(6, 3)
+  interestType          InterestType @default(FIXED)
+  loanTenureMonths      Int
+  repaymentTenureMonths Int
+  emiStartDate          DateTime?
+  targetClosureDate     DateTime?
+
+  // Moratorium / study period
+  hasMoratorium                Boolean                   @default(false)
+  studyStartDate               DateTime?
+  studyEndDate                 DateTime?
+  moratoriumStartDate          DateTime?
+  moratoriumEndDate            DateTime?
+  courseDurationMonths         Int?
+  gracePeriodMonths            Int?
+  totalMoratoriumMonths        Int?
+  moratoriumInterestPayment    MoratoriumInterestPayment @default(NONE)
+  moratoriumAvgMonthlyInterest Decimal?                  @db.Decimal(18, 2)
+
+  status    LoanStatus @default(ACTIVE)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  settings            LoanSettings?
+  disbursements       Disbursement[]
+  payments            Payment[]
+  amortizationEntries AmortizationEntry[]
+  dailyInterestLogs   DailyInterestLog[]
+
+  @@index([userId])
+}
+
+model LoanSettings {
+  id     String @id @default(cuid())
+  loanId String @unique
+  loan   Loan   @relation(fields: [loanId], references: [id], onDelete: Cascade)
+
+  compounding        CompoundingFrequency       @default(MONTHLY)
+  calculationMethod  InterestCalculationMethod  @default(REDUCING_BALANCE)
+  dayCountConvention DayCountConvention         @default(DAYS_365)
+
+  emiReminder        Boolean @default(true)
+  interestReminder   Boolean @default(true)
+  monthlySummary     Boolean @default(true)
+  emailNotifications Boolean @default(false)
+}
+
+model Disbursement {
+  id     String @id @default(cuid())
+  loanId String
+  loan   Loan   @relation(fields: [loanId], references: [id], onDelete: Cascade)
+
+  date    DateTime
+  amount  Decimal  @db.Decimal(18, 2)
+  remarks String?
+
+  createdAt DateTime @default(now())
+
+  @@index([loanId])
+}
+
+model Payment {
+  id     String @id @default(cuid())
+  loanId String
+  loan   Loan   @relation(fields: [loanId], references: [id], onDelete: Cascade)
+
+  date          DateTime
+  amount        Decimal     @db.Decimal(18, 2)
+  type          PaymentType @default(EMI)
+  interestPaid  Decimal?    @db.Decimal(18, 2)
+  principalPaid Decimal?    @db.Decimal(18, 2)
+  remarks       String?
+
+  createdAt DateTime @default(now())
+
+  allocations PaymentAllocation[]
+
+  @@index([loanId])
+  @@index([date])
+}
+
+model PaymentAllocation {
+  id        String  @id @default(cuid())
+  paymentId String
+  payment   Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  amortizationEntryId String?
+  amortizationEntry   AmortizationEntry? @relation(fields: [amortizationEntryId], references: [id])
+
+  interestCovered  Decimal @db.Decimal(18, 2)
+  principalCovered Decimal @db.Decimal(18, 2)
+
+  @@index([paymentId])
+}
+
+model AmortizationEntry {
+  id     String @id @default(cuid())
+  loanId String
+  loan   Loan   @relation(fields: [loanId], references: [id], onDelete: Cascade)
+
+  monthIndex Int
+  dueDate    DateTime
+
+  openingBalance      Decimal            @db.Decimal(18, 2)
+  interestAccrued     Decimal            @db.Decimal(18, 2)
+  interestPaid        Decimal            @default(0) @db.Decimal(18, 2)
+  principalPaid       Decimal            @default(0) @db.Decimal(18, 2)
+  emiAmount           Decimal            @db.Decimal(18, 2)
+  extraPayment        Decimal            @default(0) @db.Decimal(18, 2)
+  capitalizedInterest Decimal            @default(0) @db.Decimal(18, 2)
+  closingBalance      Decimal            @db.Decimal(18, 2)
+  status              AmortizationStatus @default(UPCOMING)
+
+  allocations PaymentAllocation[]
+
+  @@unique([loanId, monthIndex])
+  @@index([loanId, dueDate])
+}
+
+model DailyInterestLog {
+  id     String @id @default(cuid())
+  loanId String
+  loan   Loan   @relation(fields: [loanId], references: [id], onDelete: Cascade)
+
+  date               DateTime
+  outstandingBalance Decimal  @db.Decimal(18, 2)
+  dailyRate          Decimal  @db.Decimal(10, 8)
+  accruedInterest    Decimal  @db.Decimal(18, 2)
+  cumulativeAccrued  Decimal  @db.Decimal(18, 2)
+
+  createdAt DateTime @default(now())
+
+  @@unique([loanId, date])
+  @@index([loanId, date])
+}
+
+enum InterestType {
+  FIXED
+  FLOATING
+}
+
+enum CompoundingFrequency {
+  DAILY
+  MONTHLY
+  QUARTERLY
+  YEARLY
+}
+
+enum InterestCalculationMethod {
+  SIMPLE
+  COMPOUND
+  REDUCING_BALANCE
+}
+
+enum DayCountConvention {
+  DAYS_365
+  DAYS_360
+}
+
+enum MoratoriumInterestPayment {
+  NONE
+  FULL
+  PARTIAL
+}
+
+enum PaymentType {
+  EMI
+  EXTRA
+  INTEREST_ONLY
+  PRINCIPAL_ONLY
+  LUMP_SUM
+}
+
+enum AmortizationStatus {
+  PAID
+  PARTIAL
+  EXTRA_PAID
+  PENDING
+  MISSED
+  UPCOMING
+}
+
+enum LoanStatus {
+  ACTIVE
+  CLOSED
+  DRAFT
+}
