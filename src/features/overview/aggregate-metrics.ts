@@ -76,15 +76,27 @@ export function computeFinancialOverview(loans: LoanWithRelations[], now: Date):
   const activityByLoan: OverviewActivityEvent[] = [];
 
   for (const loan of loans) {
-    const input = mapLoanToEngineInput(loan);
-    const result = generateSchedule(input, now);
-    const metrics = computeLoanMetrics(
-      result.entries,
-      loan.principalAmount,
-      result.anomalies,
-      result.closureReason,
-      now,
-    );
+    // A single loan with bad/incomplete data (e.g. missing LoanSettings)
+    // must not take down this whole aggregation — every other loan should
+    // still render. Logged so it's visible in server logs, not silently
+    // dropped.
+    let input: ReturnType<typeof mapLoanToEngineInput>;
+    let result: ReturnType<typeof generateSchedule>;
+    let metrics: ReturnType<typeof computeLoanMetrics>;
+    try {
+      input = mapLoanToEngineInput(loan);
+      result = generateSchedule(input, now);
+      metrics = computeLoanMetrics(
+        result.entries,
+        loan.principalAmount,
+        result.anomalies,
+        result.closureReason,
+        now,
+      );
+    } catch (err) {
+      console.error(`computeFinancialOverview: skipping loan ${loan.id} (${loan.loanName})`, err);
+      continue;
+    }
 
     outstandingByCurrency.set(
       loan.currency,
@@ -150,7 +162,7 @@ export function computeFinancialOverview(loans: LoanWithRelations[], now: Date):
   });
 
   return {
-    loanCount: loans.length,
+    loanCount: loanSummaries.length,
     outstandingByCurrency: Array.from(outstandingByCurrency, ([currency, amount]) => ({
       currency,
       amount: amount.toFixed(2),
